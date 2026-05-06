@@ -20,7 +20,8 @@ export default function Checkout() {
     customAddress: '',
     deliveryTime: '',
     paymentMethod: 'COD',
-    notes: ''
+    notes: '',
+    referrer: ''
   });
 
   // Chuyển hướng nếu giỏ hàng trống
@@ -28,7 +29,7 @@ export default function Checkout() {
     return (
       <div className="text-center mt-20">
         <h2 className="text-2xl font-bold text-gray-800">Giỏ hàng của bạn đang trống</h2>
-        <button onClick={() => navigate('/')} className="mt-4 text-brand-500 hover:underline">Quay lại mua sắm</button>
+        <button onClick={() => navigate('/')} className="mt-4 text-green-500 hover:underline">Quay lại mua sắm</button>
       </div>
     );
   }
@@ -61,6 +62,7 @@ export default function Checkout() {
       deliveryTime: formData.deliveryTime,
       paymentMethod: formData.paymentMethod,
       notes: formData.notes,
+      referrer: formData.referrer,
       items: items.map(item => ({
         productId: item.id,
         name: item.name,
@@ -97,43 +99,43 @@ export default function Checkout() {
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-4">
             <h3 className="font-semibold text-lg text-gray-800 flex items-center gap-2">
-              <CheckCircle className="w-5 h-5 text-brand-500" /> Thông tin liên hệ
+              <CheckCircle className="w-5 h-5 text-green-500" /> Thông tin liên hệ
             </h3>
-            <input type="text" name="fullName" value={formData.fullName} onChange={handleChange} placeholder="Họ và tên" className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all" required />
-            <input type="tel" name="phone" value={formData.phone} onChange={handleChange} placeholder="Số điện thoại liên hệ" className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all" required />
+            <input type="text" name="fullName" value={formData.fullName} onChange={handleChange} placeholder="Họ và tên" className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none transition-all" required />
+            <input type="tel" name="phone" value={formData.phone} onChange={handleChange} placeholder="Số điện thoại liên hệ" className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none transition-all" required />
           </div>
 
           <div className="space-y-4">
             <h3 className="font-semibold text-lg text-gray-800 flex items-center gap-2 mt-6">
-              <MapPin className="w-5 h-5 text-brand-500" /> Địa chỉ nhận hàng
+              <MapPin className="w-5 h-5 text-green-500" /> Địa chỉ nhận hàng
             </h3>
             <div className="flex gap-4">
               <label className="flex items-center gap-2 cursor-pointer">
-                <input type="radio" name="addressType" value="NEU" checked={formData.addressType === 'NEU'} onChange={handleChange} className="text-brand-500 focus:ring-brand-500" />
+                <input type="radio" name="addressType" value="NEU" checked={formData.addressType === 'NEU'} onChange={handleChange} className="text-green-500 focus:ring-green-500" />
                 <span className="text-gray-700">Bàn truyền thống (NEU)</span>
               </label>
               <label className="flex items-center gap-2 cursor-pointer">
-                <input type="radio" name="addressType" value="OTHER" checked={formData.addressType === 'OTHER'} onChange={handleChange} className="text-brand-500 focus:ring-brand-500" />
+                <input type="radio" name="addressType" value="OTHER" checked={formData.addressType === 'OTHER'} onChange={handleChange} className="text-green-500 focus:ring-green-500" />
                 <span className="text-gray-700">Địa chỉ khác</span>
               </label>
             </div>
             {formData.addressType === 'OTHER' && (
-              <input type="text" name="customAddress" value={formData.customAddress} onChange={handleChange} placeholder="Nhập địa chỉ cụ thể..." className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none animate-fade-in" required />
+              <input type="text" name="customAddress" value={formData.customAddress} onChange={handleChange} placeholder="Nhập địa chỉ cụ thể..." className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none animate-fade-in" required />
             )}
           </div>
 
           <div className="space-y-4">
             <h3 className="font-semibold text-lg text-gray-800 flex items-center gap-2 mt-6">
-              <Clock className="w-5 h-5 text-brand-500" /> Thời gian giao hàng (Dự kiến)
+              <Clock className="w-5 h-5 text-green-500" /> Thời gian giao hàng (Dự kiến)
             </h3>
-            <input type="datetime-local" name="deliveryTime" value={formData.deliveryTime} onChange={handleChange} className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none" required />
+            <input type="datetime-local" name="deliveryTime" value={formData.deliveryTime} onChange={handleChange} className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none" required />
           </div>
 
           <div className="space-y-4">
             <h3 className="font-semibold text-lg text-gray-800 flex items-center gap-2 mt-6">
-              <CreditCard className="w-5 h-5 text-brand-500" /> Phương thức thanh toán
+              <CreditCard className="w-5 h-5 text-green-500" /> Phương thức thanh toán
             </h3>
-            <select name="paymentMethod" value={formData.paymentMethod} onChange={handleChange} className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none bg-white">
+            <select name="paymentMethod" value={formData.paymentMethod} onChange={handleChange} className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none bg-white">
               <option value="COD">Thanh toán khi nhận hàng (COD)</option>
               <option value="TRANSFER">Chuyển khoản ngân hàng</option>
             </select>
@@ -144,12 +146,32 @@ export default function Checkout() {
             )}
           </div>
 
-          <textarea name="notes" value={formData.notes} onChange={handleChange} placeholder="Ghi chú thêm (không bắt buộc)" rows="3" className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none mt-4"></textarea>
+          {/* Ô nhập Ghi chú (đã có sẵn) */}
+          <textarea 
+            name="notes" 
+            value={formData.notes} 
+            onChange={handleChange} 
+            placeholder="Ghi chú thêm (không bắt buộc)" 
+            rows="3" 
+            className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 outline-none mt-4"
+          ></textarea>
 
+          {/* Ô NHẬP NGƯỜI GIỚI THIỆU MỚI THÊM */}
+          <div className="mt-4">
+            <h3 className="font-semibold text-sm text-gray-700 mb-2">Người giới thiệu (Nếu có)</h3>
+            <input 
+              type="text" 
+              name="referrer" 
+              value={formData.referrer} 
+              onChange={handleChange} 
+              placeholder="Nhập tên hoặc mã người giới thiệu..." 
+              className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 outline-none" 
+            />
+          </div>
           <button 
             type="submit" 
             disabled={loading}
-            className="w-full bg-brand-500 hover:bg-brand-600 text-white font-bold py-4 rounded-xl transition-colors shadow-lg shadow-brand-500/30 mt-8 disabled:opacity-70 disabled:cursor-not-allowed"
+            className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-4 rounded-xl transition-colors shadow-lg shadow-green-500/30 mt-8 disabled:opacity-70 disabled:cursor-not-allowed"
           >
             {loading ? 'Đang xử lý...' : `ĐẶT HÀNG - ${new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(getTotalPrice())}`}
           </button>
@@ -180,7 +202,7 @@ export default function Checkout() {
           </div>
           <div className="mt-6 pt-4 border-t border-gray-200 flex justify-between items-center">
             <span className="text-lg font-bold text-gray-800">Tổng cộng</span>
-            <span className="text-xl font-bold text-brand-600">
+            <span className="text-xl font-bold text-green-600">
               {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(getTotalPrice())}
             </span>
           </div>

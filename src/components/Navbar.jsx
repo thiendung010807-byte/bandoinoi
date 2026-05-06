@@ -2,7 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useCart } from '../store/useCart';
-import { ShoppingBag, LogIn, LogOut, ShieldCheck, Heart } from 'lucide-react';
+import { ShoppingBag, LogIn, LogOut, ShieldCheck, Heart, ClipboardList } from 'lucide-react';
 
 export default function Navbar() {
   const { currentUser, isAdmin, loginWithGoogle, logout } = useAuth();
@@ -22,6 +22,7 @@ export default function Navbar() {
 
           {/* Right Actions */}
           <div className="flex items-center gap-4">
+            {/* Admin Button */}
             {isAdmin && (
               <Link to="/admin" className="hidden sm:flex items-center gap-1 text-sm font-medium text-orange-600 hover:text-orange-700 bg-orange-50 px-3 py-1.5 rounded-full">
                 <ShieldCheck className="w-4 h-4" />
@@ -44,9 +45,14 @@ export default function Navbar() {
 
             {/* Auth Buttons */}
             {currentUser ? (
-              <div className="flex items-center gap-3 ml-2 border-l pl-4">
-                <img src={currentUser.photoURL} alt="avatar" className="w-8 h-8 rounded-full border border-gray-200" />
-                <button onClick={logout} className="text-gray-500 hover:text-red-600">
+              <div className="flex items-center gap-3 ml-2 border-l border-gray-200 pl-4">
+                {/* NÚT XEM ĐƠN HÀNG Ở ĐÂY */}
+                <Link to="/my-orders" className="text-gray-500 hover:text-green-600 transition-colors p-2 hidden sm:block" title="Đơn hàng của tôi">
+                  <ClipboardList className="w-5 h-5" />
+                </Link>
+
+                <img src={currentUser.photoURL} alt="avatar" className="w-8 h-8 rounded-full border border-gray-200" title={currentUser.displayName} />
+                <button onClick={logout} className="text-gray-500 hover:text-red-600" title="Đăng xuất">
                   <LogOut className="w-5 h-5" />
                 </button>
               </div>

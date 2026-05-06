@@ -1,13 +1,21 @@
 import React, { useState } from 'react';
 import { useCart } from '../store/useCart';
+import { useAuth } from '../contexts/AuthContext'; // 1. Import useAuth
 import { Plus } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function ProductCard({ product }) {
   const [selectedVariant, setSelectedVariant] = useState('');
   const { addItem, openCart } = useCart();
+  const { currentUser } = useAuth(); // 2. Lấy thông tin user hiện tại
 
   const handleAddToCart = () => {
+    // 3. Chặn nếu chưa đăng nhập
+    if (!currentUser) {
+      toast.error('Vui lòng đăng nhập để mua hàng!', { icon: '🔒' });
+      return; 
+    }
+
     if (product.variants && product.variants.length > 0 && !selectedVariant) {
       toast.error('Vui lòng chọn phân loại/vị!', { position: 'bottom-center' });
       return;

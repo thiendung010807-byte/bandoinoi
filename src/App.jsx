@@ -3,11 +3,12 @@ import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
-// Các trang sẽ được build ở phần tiếp theo
 import Home from './pages/Home';
 import Checkout from './pages/Checkout';
 import AdminDashboard from './pages/AdminDashboard';
 import Navbar from './components/Navbar';
+import CartSidebar from './components/CartSidebar';
+import MyOrders from './pages/MyOrders';
 
 function App() {
   return (
@@ -15,11 +16,13 @@ function App() {
       <Router>
         <div className="min-h-screen bg-gray-50 text-gray-900 font-sans">
           <Navbar />
+          <CartSidebar />
           <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             <Routes>
+              {/* Trang chủ */}
               <Route path="/" element={<Home />} />
               
-              {/* Chỉ user đăng nhập mới vào được Checkout */}
+              {/* Trang thanh toán */}
               <Route 
                 path="/checkout" 
                 element={
@@ -28,8 +31,15 @@ function App() {
                   </ProtectedRoute>
                 } 
               />
-
-              {/* Chỉ Admin mới vào được Dashboard */}
+	      <Route 
+                path="/my-orders" 
+                element={
+                  <ProtectedRoute>
+                    <MyOrders />
+                  </ProtectedRoute>
+                } 
+              />
+              {/* Trang Admin */}
               <Route 
                 path="/admin" 
                 element={

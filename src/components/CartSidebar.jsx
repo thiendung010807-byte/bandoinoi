@@ -24,7 +24,7 @@ export default function CartSidebar() {
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-100">
           <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-            <ShoppingBag className="w-5 h-5 text-brand-500" />
+            <ShoppingBag className="w-5 h-5 text-green-500" />
             Giỏ hàng của bạn
           </h2>
           <button onClick={closeCart} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors">
@@ -54,14 +54,14 @@ export default function CartSidebar() {
                   </div>
                   
                   <div className="flex items-center justify-between mt-2">
-                    <span className="font-bold text-brand-600 text-sm">{formatPrice(item.price)}</span>
+                    <span className="font-bold text-green-600 text-sm">{formatPrice(item.price)}</span>
                     
                     <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-lg px-2 py-1">
-                      <button onClick={() => updateQuantity(item.cartItemId, -1)} className="text-gray-500 hover:text-brand-500 disabled:opacity-50" disabled={item.quantity <= 1}>
+                      <button onClick={() => updateQuantity(item.cartItemId, -1)} className="text-gray-500 hover:text-green-500 disabled:opacity-50" disabled={item.quantity <= 1}>
                         <Minus className="w-3 h-3" />
                       </button>
                       <span className="text-xs font-semibold w-4 text-center">{item.quantity}</span>
-                      <button onClick={() => updateQuantity(item.cartItemId, 1)} className="text-gray-500 hover:text-brand-500">
+                      <button onClick={() => updateQuantity(item.cartItemId, 1)} className="text-gray-500 hover:text-green-500">
                         <Plus className="w-3 h-3" />
                       </button>
                     </div>
@@ -81,14 +81,14 @@ export default function CartSidebar() {
           <div className="p-4 bg-white border-t border-gray-100 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
             <div className="flex justify-between items-center mb-4">
               <span className="text-gray-600">Tổng cộng:</span>
-              <span className="text-xl font-bold text-brand-600">{formatPrice(getTotalPrice())}</span>
+              <span className="text-xl font-bold text-green-600">{formatPrice(getTotalPrice())}</span>
             </div>
             <button 
               onClick={() => {
                 closeCart();
                 navigate('/checkout');
               }}
-              className="w-full bg-brand-500 hover:bg-brand-600 text-white font-bold py-3.5 rounded-xl transition-colors flex justify-center items-center gap-2"
+              className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3.5 rounded-xl transition-colors flex justify-center items-center gap-2"
             >
               Tiến hành Thanh toán
             </button>

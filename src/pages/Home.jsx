@@ -1,11 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import ProductCard from '../components/ProductCard';
-import { mockProducts } from '../utils/mockData';
-import { HeartHandshake } from 'lucide-react';
-// Nếu bạn lấy từ Firebase sau này, dùng: import { collection, getDocs } from 'firebase/firestore'; import { db } from '../config/firebase';
+import { HeartHandshake, Loader } from 'lucide-react';
+import { db } from '../config/firebase';
+import { collection, onSnapshot } from 'firebase/firestore';
 
 export default function Home() {
-  const [products, setProducts] = useState(mockProducts); // Tạm thời dùng mock data
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Lắng nghe dữ liệu realtime từ collection 'products'
+    const unsubscribe = onSnapshot(collection(db, 'products'), (snapshot) => {
+      const productsData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setProducts(productsData);
+      setLoading(false);
+    }, (error) => {
+      console.error("Lỗi lấy sản phẩm:", error);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -20,8 +38,6 @@ export default function Home() {
             Mỗi sản phẩm bạn mua đóng góp trực tiếp vào quỹ xây dựng tủ sách và mua áo ấm cho trẻ em vùng cao trong chiến dịch Mùa Hè Xanh 2026.
           </p>
         </div>
-        {/* Abstract decoration */}
-        <div className="absolute -top-24 -right-24 w-64 h-64 bg-yellow-400 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob"></div>
       </div>
 
       {/* Grid Sản phẩm */}
@@ -30,11 +46,21 @@ export default function Home() {
           <h2 className="text-2xl font-bold text-gray-900">Danh mục sản phẩm</h2>
         </div>
         
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-6">
-          {products.map(product => (
-            <ProductCard key={product.id} product={product} />
-          ))}
-        </div>
+        {loading ? (
+          <div className="flex justify-center items-center py-20 text-green-500">
+            <Loader className="w-8 h-8 animate-spin" />
+          </div>
+        ) : products.length === 0 ? (
+          <div className="text-center py-20 text-gray-500 bg-white rounded-2xl border border-gray-100">
+            <p>Hiện chưa có sản phẩm nào. Xin vui lòng quay lại sau!</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-6">
+            {products.map(product => (
+              <ProductCard key={product.id} product={product} />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
