@@ -132,15 +132,27 @@ export default function ProductCardPro({ product }) {
         </div>
       </motion.div>
 
-      {/* ================= MODAL CHI TIẾT (QUICK VIEW) ================= */}
+      {/* ================= MODAL QUICK VIEW (MOBILE BOTTOM SHEET & DESKTOP CENTER) ================= */}
       <AnimatePresence>
         {isModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm">
+          // Đổi items-center thành items-end trên mobile để modal ép sát đáy màn hình
+          <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center sm:p-6 bg-slate-900/60 backdrop-blur-sm">
+            
+            {/* Lớp nền đen mờ: Bấm vào đây để đóng modal */}
             <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 20 }} 
-              animate={{ opacity: 1, scale: 1, y: 0 }} 
-              exit={{ opacity: 0, scale: 0.95, y: 20 }} 
-              className="bg-white rounded-[2.5rem] w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl relative flex flex-col md:flex-row"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} 
+              onClick={() => setIsModalOpen(false)} 
+              className="absolute inset-0 z-0"
+            />
+
+            <motion.div 
+              // Đổi animation: Trượt từ dưới lên (y: 100% -> y: 0) cực mượt
+              initial={{ opacity: 0, y: "100%" }} 
+              animate={{ opacity: 1, y: 0 }} 
+              exit={{ opacity: 0, y: "100%" }} 
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              // Bo tròn 2 góc trên cho mobile (rounded-t-[2rem]), bo tròn đều cho desktop (md:rounded-[2.5rem])
+              className="bg-white rounded-t-[2rem] md:rounded-[2.5rem] w-full max-w-4xl max-h-[90vh] md:max-h-[85vh] overflow-hidden shadow-2xl relative flex flex-col md:flex-row z-10"
             >
               {/* Nút đóng */}
               <button onClick={() => setIsModalOpen(false)} className="absolute top-4 right-4 z-20 bg-white/80 backdrop-blur-md p-2 rounded-full text-slate-500 hover:text-red-500 hover:bg-red-50 transition-colors shadow-sm">
@@ -148,8 +160,8 @@ export default function ProductCardPro({ product }) {
               </button>
               
               {/* CỘT TRÁI: THƯ VIỆN ẢNH */}
-              <div className="md:w-5/12 bg-slate-50 p-6 flex flex-col items-center border-r border-slate-100">
-                <div className="w-full aspect-square rounded-2xl overflow-hidden bg-white shadow-sm border border-slate-200 mb-4 relative">
+              <div className="md:w-5/12 bg-slate-50 p-4 md:p-6 flex flex-col items-center border-b md:border-b-0 md:border-r border-slate-100">
+                <div className="w-full aspect-video md:aspect-square rounded-2xl overflow-hidden bg-white shadow-sm border border-slate-200 mb-3 relative">
                   <AnimatePresence mode="wait">
                     <motion.img 
                       key={currentImage}
@@ -159,14 +171,13 @@ export default function ProductCardPro({ product }) {
                   </AnimatePresence>
                 </div>
                 
-                {/* Thumbnails (Luôn hiện nếu có > 1 ảnh) */}
                 {allImages.length > 1 && (
-                  <div className="flex gap-3 w-full overflow-x-auto pb-2 custom-scrollbar">
+                  <div className="flex gap-2.5 w-full overflow-x-auto pb-2 custom-scrollbar">
                     {allImages.map((img, idx) => (
                       <button 
                         key={idx} 
                         onClick={() => setCurrentImage(img)} 
-                        className={`w-16 h-16 rounded-xl overflow-hidden border-2 flex-shrink-0 transition-all ${currentImage === img ? 'border-green-500 ring-2 ring-green-100' : 'border-transparent opacity-60 hover:opacity-100'}`}
+                        className={`w-14 h-14 md:w-16 md:h-16 rounded-xl overflow-hidden border-2 flex-shrink-0 transition-all ${currentImage === img ? 'border-green-500 ring-2 ring-green-100' : 'border-transparent opacity-60 hover:opacity-100'}`}
                       >
                         <img src={img} className="w-full h-full object-cover" />
                       </button>
@@ -176,27 +187,26 @@ export default function ProductCardPro({ product }) {
               </div>
               
               {/* CỘT PHẢI: CHI TIẾT SẢN PHẨM */}
-              <div className="p-6 md:p-8 md:w-7/12 flex flex-col overflow-y-auto custom-scrollbar">
-                {product.isCombo && <span className="w-fit bg-orange-100 text-orange-600 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider mb-3">Combo Hot</span>}
-                <h2 className="text-2xl md:text-3xl font-heading font-extrabold text-slate-900 mb-2">{product.name}</h2>
-                <p className="text-3xl font-extrabold text-green-600 mb-6">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(product.price)}</p>
+              {/* Thêm pb-6 để trên mobile lúc cuộn không bị dính đáy */}
+              <div className="p-5 md:p-8 md:w-7/12 flex flex-col overflow-y-auto custom-scrollbar pb-8 md:pb-8">
+                {product.isCombo && <span className="w-fit bg-orange-100 text-orange-600 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider mb-2">Combo Hot</span>}
+                <h2 className="text-xl md:text-3xl font-heading font-extrabold text-slate-900 mb-2 leading-tight">{product.name}</h2>
+                <p className="text-2xl md:text-3xl font-extrabold text-green-600 mb-5">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(product.price)}</p>
                 
                 {isHot && (
-                  <div className="flex items-start gap-3 mb-6 text-sm text-orange-800 bg-orange-50/80 p-4 rounded-xl border border-orange-100">
+                  <div className="flex items-start gap-3 mb-5 text-xs md:text-sm text-orange-800 bg-orange-50/80 p-3.5 rounded-xl border border-orange-100">
                     <Flame className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
-                    <p className="leading-relaxed">Sản phẩm đang được săn đón! Đã có <b className="text-slate-900 font-extrabold text-base">{soldCount}</b> lượt ủng hộ.</p>
+                    <p className="leading-relaxed">Đang được săn đón! Đã có <b className="text-slate-900 font-extrabold text-sm md:text-base">{soldCount}</b> lượt ủng hộ.</p>
                   </div>
                 )}
 
-                {/* Mô tả (Đã fix lỗi xuống dòng) */}
-                <div className="mb-6">
+                <div className="mb-5">
                   <p className="text-sm font-bold text-slate-800 mb-2">Mô tả sản phẩm:</p>
-                  <p className="text-sm text-slate-600 leading-relaxed bg-slate-50 p-4 rounded-xl border border-slate-100 whitespace-pre-wrap">
+                  <p className="text-xs md:text-sm text-slate-600 leading-relaxed bg-slate-50 p-3.5 rounded-xl border border-slate-100 whitespace-pre-wrap">
                     {product.description || 'Món ngon tuyệt đỉnh, 100% lợi nhuận ủng hộ chiến dịch Mùa Hè Xanh.'}
                   </p>
                 </div>
 
-                {/* Chọn Phân loại (Chỉ hiện nếu có TÊN vị) */}
                 {product.variants && product.variants.filter(v => v.trim() !== '').length > 0 && (
                   <div className="mb-6">
                     <p className="text-sm font-bold text-slate-800 mb-3">Chọn phân loại:</p>
@@ -211,7 +221,8 @@ export default function ProductCardPro({ product }) {
                               if (product.variantImages && product.variantImages[idx]) setCurrentImage(product.variantImages[idx]);
                               else setCurrentImage(product.image);
                             }}
-                            className={`px-4 py-2 rounded-xl text-sm font-bold transition-all border-2 relative overflow-hidden ${selectedVariant === v ? 'border-green-500 bg-green-50 text-green-700 shadow-sm' : 'border-slate-200 text-slate-600 hover:border-green-300 bg-white'}`}
+                            // Tăng padding (px-4 py-2.5) để ngón tay dễ bấm trên mobile
+                            className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-all border-2 relative overflow-hidden ${selectedVariant === v ? 'border-green-500 bg-green-50 text-green-700 shadow-sm' : 'border-slate-200 text-slate-600 hover:border-green-300 bg-white'}`}
                           >
                             {v}
                             {selectedVariant === v && (
@@ -224,28 +235,29 @@ export default function ProductCardPro({ product }) {
                   </div>
                 )}
 
-                {/* Số lượng và Trạng thái */}
-                <div className="flex items-center gap-4 mb-8 mt-2">
-                  <p className="text-sm font-bold text-slate-800 w-20">Số lượng:</p>
-                  <div className={`flex items-center border-2 border-slate-200 rounded-xl bg-white overflow-hidden shadow-sm ${isOutOfStock ? 'opacity-50 pointer-events-none' : ''}`}>
-                    <button onClick={() => setQuantity(q => Math.max(1, q - 1))} className="w-10 h-10 flex items-center justify-center text-slate-500 hover:bg-slate-100"><Minus className="w-4 h-4" /></button>
-                    <input type="number" value={quantity} readOnly className="w-12 h-10 text-center font-bold text-slate-800 border-x-2 border-slate-200 outline-none" />
-                    <button onClick={() => setQuantity(q => q + 1)} className="w-10 h-10 flex items-center justify-center text-slate-500 hover:bg-slate-100"><Plus className="w-4 h-4" /></button>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-6 mt-auto">
+                  <div className="flex items-center justify-between sm:justify-start w-full sm:w-auto gap-4">
+                    <p className="text-sm font-bold text-slate-800">Số lượng:</p>
+                    <div className={`flex items-center border-2 border-slate-200 rounded-xl bg-white overflow-hidden shadow-sm ${isOutOfStock ? 'opacity-50 pointer-events-none' : ''}`}>
+                      <button onClick={() => setQuantity(q => Math.max(1, q - 1))} className="w-12 h-10 md:w-10 flex items-center justify-center text-slate-500 hover:bg-slate-100"><Minus className="w-4 h-4" /></button>
+                      <input type="number" value={quantity} readOnly className="w-12 h-10 text-center font-bold text-slate-800 border-x-2 border-slate-200 outline-none" />
+                      <button onClick={() => setQuantity(q => q + 1)} className="w-12 h-10 md:w-10 flex items-center justify-center text-slate-500 hover:bg-slate-100"><Plus className="w-4 h-4" /></button>
+                    </div>
                   </div>
-                  <span className={`text-sm font-extrabold ${isOutOfStock ? 'text-red-500' : 'text-green-600'}`}>
+                  
+                  <span className={`text-sm font-extrabold text-right w-full sm:w-auto ${isOutOfStock ? 'text-red-500' : 'text-green-600 hidden sm:block'}`}>
                     {isOutOfStock ? 'TẠM HẾT HÀNG' : 'CÒN HÀNG'}
                   </span>
                 </div>
 
-                {/* Nút đặt mua */}
                 <button 
                   onClick={handleAdd} 
                   disabled={isOutOfStock}
-                  className={`w-full mt-auto py-4 rounded-xl font-bold transition-all flex items-center justify-center gap-2 
-                    ${isOutOfStock ? 'bg-slate-200 text-slate-500 cursor-not-allowed shadow-none' : 'bg-slate-900 hover:bg-slate-800 text-white shadow-lg shadow-slate-900/20 active:scale-[0.98]'}`}
+                  className={`w-full py-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 
+                    ${isOutOfStock ? 'bg-slate-200 text-slate-500 cursor-not-allowed shadow-none' : 'bg-slate-900 hover:bg-slate-800 text-white shadow-xl shadow-slate-900/20 active:scale-[0.98]'}`}
                 >
                   <ShoppingCart className="w-5 h-5" /> 
-                  {isOutOfStock ? 'SẢN PHẨM ĐÃ HẾT' : `THÊM VÀO GIỎ HÀNG - ${new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(product.price * quantity)}`}
+                  {isOutOfStock ? 'SẢN PHẨM ĐÃ HẾT' : `THÊM VÀO GIỎ • ${new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(product.price * quantity)}`}
                 </button>
               </div>
             </motion.div>

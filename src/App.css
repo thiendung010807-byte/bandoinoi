@@ -182,3 +182,10 @@
     border-right-color: var(--border);
   }
 }
+
+/* Ẩn logo reCAPTCHA của Firebase cho gọn màn hình */
+.grecaptcha-badge {
+  visibility: hidden !important;
+  opacity: 0 !important;
+  display: none !important;
+}
