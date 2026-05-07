@@ -30,3 +30,10 @@
 .shadow-glow {
   box-shadow: 0 0 20px rgba(34, 197, 94, 0.4);
 }
+
+/* Ẩn logo reCAPTCHA của Firebase cho gọn màn hình */
+.grecaptcha-badge {
+  visibility: hidden !important;
+  opacity: 0 !important;
+  display: none !important;
+}
