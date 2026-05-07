@@ -172,13 +172,13 @@ export default function Checkout() {
             {watchPaymentMethod === 'TRANSFER' && (
               <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="p-6 bg-slate-50 rounded-2xl border border-slate-200 mt-4">
                 <div className="text-center mb-6">
-                  <img src={`https://api.vietqr.io/image/970436-123456789-Zq0m8aY.jpg?accountName=DOI%20TN%20MUA%20HE%20XANH&amount=${getTotalPrice()}&addInfo=MHX%20${watch('phone')}`} alt="QR Code" className="w-48 h-48 mx-auto rounded-xl shadow-sm border border-slate-200" />
+                  <img src={`https://img.vietqr.io/image/TCB-9899170810-compact.png?accountName=TRUONG%20THANH%20HANG&amount=${getTotalPrice()}&addInfo=MHX%20${watch('phone')}`} alt="QR Code" className="w-48 h-48 mx-auto rounded-xl shadow-sm border border-slate-200" />
                   <p className="text-xs text-slate-500 mt-2">Quét mã bằng app Ngân hàng / Momo</p>
                 </div>
                 <div className="space-y-2 text-sm text-slate-700 bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
-                  <p className="flex justify-between"><span>Ngân hàng:</span> <span className="font-bold text-slate-900">Vietcombank</span></p>
-                  <p className="flex justify-between"><span>Số tài khoản:</span> <span className="font-bold text-slate-900">123456789</span></p>
-                  <p className="flex justify-between"><span>Chủ tài khoản:</span> <span className="font-bold text-slate-900">ĐỘI TN MÙA HÈ XANH</span></p>
+                  <p className="flex justify-between"><span>Ngân hàng:</span> <span className="font-bold text-slate-900">Techcombank</span></p>
+                  <p className="flex justify-between"><span>Số tài khoản:</span> <span className="font-bold text-slate-900">9899170810</span></p>
+                  <p className="flex justify-between"><span>Chủ tài khoản:</span> <span className="font-bold text-slate-900">TRUONG THANH HANG</span></p>
                   <p className="flex justify-between text-orange-600 font-medium pt-2 border-t mt-2"><span>Nội dung CK:</span> <span>MHX {watch('phone') || '[SĐT của bạn]'}</span></p>
                 </div>
                 <div className="mt-4">
