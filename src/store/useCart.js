@@ -34,7 +34,6 @@ export const useCart = create(
             items: [...state.items, { ...product, variant, quantity: 1, cartItemId }]
           };
         });
-        toast.success(`Đã thêm ${product.name} vào giỏ!`, { icon: '🛒' });
       },
 
       removeItem: (cartItemId) => {

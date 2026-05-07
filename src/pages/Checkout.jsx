@@ -1,210 +1,279 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
+import { yupResolver } from '@hookform/resolvers/yup';
+import * as yup from 'yup';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useCart } from '../store/useCart';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../config/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, updateDoc, increment } from 'firebase/firestore';
 import toast from 'react-hot-toast';
-import { MapPin, Clock, CreditCard, CheckCircle } from 'lucide-react';
+import { User, MapPin, Clock, CreditCard, ChevronRight, ChevronLeft, ShieldCheck, CheckCircle2 } from 'lucide-react';
+
+const schema = yup.object().shape({
+  fullName: yup.string().required('Vui lòng nhập họ tên'),
+  phone: yup.string().matches(/(84|0[3|5|7|8|9])+([0-9]{8})\b/, 'Số điện thoại không hợp lệ').required('Vui lòng nhập số điện thoại'),
+  addressType: yup.string().required(),
+  customAddress: yup.string().when('addressType', { is: 'OTHER', then: () => yup.string().required('Vui lòng nhập địa chỉ cụ thể') }),
+  deliveryTime: yup.string().required('Vui lòng chọn thời gian nhận hàng'),
+  notes: yup.string(),
+  referrer: yup.string(),
+  paymentMethod: yup.string().required(),
+  proofLink: yup.string()
+});
 
 export default function Checkout() {
   const { items, getTotalPrice, clearCart } = useCart();
   const { currentUser } = useAuth();
   const navigate = useNavigate();
   
+  const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    fullName: currentUser?.displayName || '',
-    phone: '',
-    addressType: 'NEU', // 'NEU' hoặc 'OTHER'
-    customAddress: '',
-    deliveryTime: '',
-    paymentMethod: 'COD',
-    notes: '',
-    referrer: ''
+
+  const { register, handleSubmit, trigger, watch, formState: { errors } } = useForm({
+    resolver: yupResolver(schema),
+    defaultValues: {
+      fullName: currentUser?.displayName || '', phone: '', addressType: 'NEU', customAddress: '',
+      deliveryTime: '', notes: '', referrer: '', paymentMethod: 'COD', proofLink: ''
+    },
+    mode: 'onChange'
   });
 
-  // Chuyển hướng nếu giỏ hàng trống
+  const watchAddressType = watch('addressType');
+  const watchPaymentMethod = watch('paymentMethod');
+
   if (items.length === 0 && !loading) {
     return (
-      <div className="text-center mt-20">
-        <h2 className="text-2xl font-bold text-gray-800">Giỏ hàng của bạn đang trống</h2>
-        <button onClick={() => navigate('/')} className="mt-4 text-green-500 hover:underline">Quay lại mua sắm</button>
+      <div className="min-h-[60vh] flex flex-col items-center justify-center text-center animate-fade-in">
+        <div className="w-24 h-24 bg-slate-100 rounded-full flex items-center justify-center mb-6"><ShieldCheck className="w-12 h-12 text-slate-300" /></div>
+        <h2 className="text-2xl font-bold text-slate-800">Giỏ hàng trống</h2>
+        <p className="text-slate-500 mt-2 mb-6">Bạn chưa có sản phẩm nào để thanh toán.</p>
+        <button onClick={() => navigate('/')} className="px-6 py-3 bg-green-500 hover:bg-green-600 text-white font-bold rounded-xl transition-colors">Quay lại cửa hàng</button>
       </div>
     );
   }
 
-  const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+  const handleNextStep = async () => {
+    let fieldsToValidate = [];
+    if (step === 1) fieldsToValidate = ['fullName', 'phone', 'addressType', 'customAddress'];
+    if (step === 2) fieldsToValidate = ['deliveryTime'];
+
+    const isStepValid = await trigger(fieldsToValidate);
+    if (isStepValid) setStep(prev => prev + 1);
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!formData.phone || formData.phone.length < 9) {
-      return toast.error("Vui lòng nhập số điện thoại hợp lệ!");
-    }
-    if (formData.addressType === 'OTHER' && !formData.customAddress) {
-      return toast.error("Vui lòng nhập địa chỉ giao hàng!");
-    }
-    if (!formData.deliveryTime) {
-      return toast.error("Vui lòng chọn thời gian nhận hàng!");
-    }
-
+  const onSubmit = async (data) => {
     setLoading(true);
-    
-    // Chuẩn bị dữ liệu Đơn hàng
     const orderData = {
-      userId: currentUser.uid,
-      userEmail: currentUser.email,
-      customerName: formData.fullName,
-      phone: formData.phone,
-      address: formData.addressType === 'NEU' ? 'Bàn truyền thống (NEU - 185 Trần Đại Nghĩa)' : formData.customAddress,
-      deliveryTime: formData.deliveryTime,
-      paymentMethod: formData.paymentMethod,
-      notes: formData.notes,
-      referrer: formData.referrer,
-      items: items.map(item => ({
-        productId: item.id,
-        name: item.name,
-        variant: item.variant || null,
-        price: item.price,
-        quantity: item.quantity
-      })),
-      total: getTotalPrice(),
-      status: 'pending', // Các trạng thái: pending, confirmed, shipping, done
-      createdAt: serverTimestamp()
+      userId: currentUser.uid, userEmail: currentUser.email, customerName: data.fullName, phone: data.phone,
+      address: data.addressType === 'NEU' ? 'Bàn truyền thống (NEU - 185 Trần Đại Nghĩa)' : data.customAddress,
+      deliveryTime: data.deliveryTime, paymentMethod: data.paymentMethod, notes: data.notes, referrer: data.referrer, proofLink: data.proofLink,
+      items: items.map(item => ({ productId: item.id, name: item.name, variant: item.variant || null, price: item.price, quantity: item.quantity })),
+      total: getTotalPrice(), status: 'pending', createdAt: serverTimestamp()
     };
 
     try {
-      // Lưu vào Firestore collection 'orders'
       await addDoc(collection(db, 'orders'), orderData);
       
-      toast.success('Đặt hàng thành công! Cảm ơn bạn đã ủng hộ chương trình.', { duration: 4000 });
+      // Tăng số lượng đã bán + Đơn chim mồi
+      for (const item of items) {
+        const fakeBonus = Math.floor(Math.random() * 4) + 2; 
+        const totalIncrease = item.quantity + fakeBonus;
+        const productRef = doc(db, 'products', item.id);
+        await updateDoc(productRef, { sold: increment(totalIncrease) });
+      }
+
+      toast.success('🎉 Đặt hàng thành công!', { duration: 5000 });
       clearCart();
-      navigate('/'); 
+      navigate('/my-orders'); 
     } catch (error) {
-      console.error("Lỗi khi tạo đơn hàng:", error);
-      toast.error('Có lỗi xảy ra, vui lòng thử lại sau!');
+      toast.error('Lỗi khi đặt hàng, vui lòng thử lại!');
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <div className="max-w-4xl mx-auto bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8 animate-fade-in">
-      <h1 className="text-2xl font-bold text-gray-900 mb-8 border-b pb-4">Xác nhận thanh toán</h1>
+  const renderStepContent = () => {
+    switch (step) {
+      case 1:
+        return (
+          <motion.div key="step1" initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -20, opacity: 0 }} className="space-y-6">
+            <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2 mb-6"><User className="w-6 h-6 text-green-500" /> Thông tin người nhận</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">Họ và Tên *</label>
+                <input {...register('fullName')} className={`w-full p-3.5 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-green-500 transition-all ${errors.fullName ? 'border-red-500' : 'border-slate-200'}`} placeholder="Nhập họ tên của bạn" />
+                {errors.fullName && <p className="text-red-500 text-xs mt-1">{errors.fullName.message}</p>}
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">Số điện thoại *</label>
+                <input {...register('phone')} type="tel" className={`w-full p-3.5 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-green-500 transition-all ${errors.phone ? 'border-red-500' : 'border-slate-200'}`} placeholder="09xx xxx xxx" />
+                {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone.message}</p>}
+              </div>
+            </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-        {/* Form Nhập liệu */}
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="space-y-4">
-            <h3 className="font-semibold text-lg text-gray-800 flex items-center gap-2">
-              <CheckCircle className="w-5 h-5 text-green-500" /> Thông tin liên hệ
-            </h3>
-            <input type="text" name="fullName" value={formData.fullName} onChange={handleChange} placeholder="Họ và tên" className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none transition-all" required />
-            <input type="tel" name="phone" value={formData.phone} onChange={handleChange} placeholder="Số điện thoại liên hệ" className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none transition-all" required />
-          </div>
-
-          <div className="space-y-4">
-            <h3 className="font-semibold text-lg text-gray-800 flex items-center gap-2 mt-6">
-              <MapPin className="w-5 h-5 text-green-500" /> Địa chỉ nhận hàng
-            </h3>
-            <div className="flex gap-4">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="radio" name="addressType" value="NEU" checked={formData.addressType === 'NEU'} onChange={handleChange} className="text-green-500 focus:ring-green-500" />
-                <span className="text-gray-700">Bàn truyền thống (NEU)</span>
+            <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2 mt-8 mb-6"><MapPin className="w-6 h-6 text-green-500" /> Địa chỉ giao hàng</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <label className={`cursor-pointer border-2 rounded-xl p-4 flex items-center gap-3 transition-all ${watchAddressType === 'NEU' ? 'border-green-500 bg-green-50/50' : 'border-slate-100 bg-white hover:border-slate-200'}`}>
+                <input type="radio" value="NEU" {...register('addressType')} className="w-4 h-4 text-green-600 focus:ring-green-500" />
+                <div><p className="font-bold text-slate-800">Lấy tại bàn</p><p className="text-xs text-slate-500">Bàn truyền thống NEU</p></div>
               </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="radio" name="addressType" value="OTHER" checked={formData.addressType === 'OTHER'} onChange={handleChange} className="text-green-500 focus:ring-green-500" />
-                <span className="text-gray-700">Địa chỉ khác</span>
+              <label className={`cursor-pointer border-2 rounded-xl p-4 flex items-center gap-3 transition-all ${watchAddressType === 'OTHER' ? 'border-green-500 bg-green-50/50' : 'border-slate-100 bg-white hover:border-slate-200'}`}>
+                <input type="radio" value="OTHER" {...register('addressType')} className="w-4 h-4 text-green-600 focus:ring-green-500" />
+                <div><p className="font-bold text-slate-800">Giao tận nơi</p><p className="text-xs text-slate-500">Nhập địa chỉ của bạn</p></div>
               </label>
             </div>
-            {formData.addressType === 'OTHER' && (
-              <input type="text" name="customAddress" value={formData.customAddress} onChange={handleChange} placeholder="Nhập địa chỉ cụ thể..." className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none animate-fade-in" required />
+            {watchAddressType === 'OTHER' && (
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
+                <input {...register('customAddress')} className={`w-full p-3.5 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-green-500 ${errors.customAddress ? 'border-red-500' : 'border-slate-200'}`} placeholder="Số nhà, tên đường, phường/xã, quận/huyện..." />
+                {errors.customAddress && <p className="text-red-500 text-xs mt-1">{errors.customAddress.message}</p>}
+              </motion.div>
             )}
-          </div>
-
-          <div className="space-y-4">
-            <h3 className="font-semibold text-lg text-gray-800 flex items-center gap-2 mt-6">
-              <Clock className="w-5 h-5 text-green-500" /> Thời gian giao hàng (Dự kiến)
-            </h3>
-            <input type="datetime-local" name="deliveryTime" value={formData.deliveryTime} onChange={handleChange} className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none" required />
-          </div>
-
-          <div className="space-y-4">
-            <h3 className="font-semibold text-lg text-gray-800 flex items-center gap-2 mt-6">
-              <CreditCard className="w-5 h-5 text-green-500" /> Phương thức thanh toán
-            </h3>
-            <select name="paymentMethod" value={formData.paymentMethod} onChange={handleChange} className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none bg-white">
-              <option value="COD">Thanh toán khi nhận hàng (COD)</option>
-              <option value="TRANSFER">Chuyển khoản ngân hàng</option>
-            </select>
-            {formData.paymentMethod === 'TRANSFER' && (
-              <div className="p-4 bg-orange-50 border border-orange-100 rounded-xl text-sm text-orange-800 animate-fade-in">
-                Vui lòng chuyển khoản tới STK: <strong>123456789 (Vietcombank)</strong> - Chủ TK: Đội TN Mùa Hè Xanh. Nội dung: <strong>MHX {formData.phone}</strong>. Đơn hàng sẽ được xác nhận sau khi nhận được tiền.
-              </div>
+          </motion.div>
+        );
+      case 2:
+        return (
+          <motion.div key="step2" initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -20, opacity: 0 }} className="space-y-6">
+            <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2 mb-6"><Clock className="w-6 h-6 text-green-500" /> Thời gian & Tùy chọn</h3>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1">Thời gian nhận hàng mong muốn *</label>
+              <input type="datetime-local" {...register('deliveryTime')} className={`w-full p-3.5 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-green-500 ${errors.deliveryTime ? 'border-red-500' : 'border-slate-200'}`} />
+              {errors.deliveryTime && <p className="text-red-500 text-xs mt-1">{errors.deliveryTime.message}</p>}
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1 mt-4">Người giới thiệu (Nếu có)</label>
+              <input {...register('referrer')} className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-green-500" placeholder="Mã CTV hoặc tên người giới thiệu" />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1 mt-4">Ghi chú thêm</label>
+              <textarea {...register('notes')} rows="3" className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-green-500" placeholder="Lưu ý về món ăn, địa chỉ..."></textarea>
+            </div>
+          </motion.div>
+        );
+      case 3:
+        return (
+          <motion.div key="step3" initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -20, opacity: 0 }} className="space-y-6">
+            <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2 mb-6"><CreditCard className="w-6 h-6 text-green-500" /> Thanh toán</h3>
+            <div className="space-y-4">
+              <label className={`cursor-pointer border-2 rounded-xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all ${watchPaymentMethod === 'COD' ? 'border-green-500 bg-green-50/30' : 'border-slate-100 bg-white hover:border-slate-200'}`}>
+                <div className="flex items-center gap-3">
+                  <input type="radio" value="COD" {...register('paymentMethod')} className="w-5 h-5 text-green-600 focus:ring-green-500" />
+                  <div><p className="font-bold text-slate-800 text-lg">Tiền mặt (COD)</p><p className="text-sm text-slate-500">Thanh toán khi nhận hàng</p></div>
+                </div>
+              </label>
+              <label className={`cursor-pointer border-2 rounded-xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all ${watchPaymentMethod === 'TRANSFER' ? 'border-green-500 bg-green-50/30' : 'border-slate-100 bg-white hover:border-slate-200'}`}>
+                <div className="flex items-center gap-3">
+                  <input type="radio" value="TRANSFER" {...register('paymentMethod')} className="w-5 h-5 text-green-600 focus:ring-green-500" />
+                  <div><p className="font-bold text-slate-800 text-lg">Chuyển khoản</p><p className="text-sm text-slate-500">Quét mã QR hoặc chuyển khoản thủ công</p></div>
+                </div>
+              </label>
+            </div>
+            {watchPaymentMethod === 'TRANSFER' && (
+              <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="p-6 bg-slate-50 rounded-2xl border border-slate-200 mt-4">
+                <div className="text-center mb-6">
+                  <img src={`https://api.vietqr.io/image/970436-123456789-Zq0m8aY.jpg?accountName=DOI%20TN%20MUA%20HE%20XANH&amount=${getTotalPrice()}&addInfo=MHX%20${watch('phone')}`} alt="QR Code" className="w-48 h-48 mx-auto rounded-xl shadow-sm border border-slate-200" />
+                  <p className="text-xs text-slate-500 mt-2">Quét mã bằng app Ngân hàng / Momo</p>
+                </div>
+                <div className="space-y-2 text-sm text-slate-700 bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+                  <p className="flex justify-between"><span>Ngân hàng:</span> <span className="font-bold text-slate-900">Vietcombank</span></p>
+                  <p className="flex justify-between"><span>Số tài khoản:</span> <span className="font-bold text-slate-900">123456789</span></p>
+                  <p className="flex justify-between"><span>Chủ tài khoản:</span> <span className="font-bold text-slate-900">ĐỘI TN MÙA HÈ XANH</span></p>
+                  <p className="flex justify-between text-orange-600 font-medium pt-2 border-t mt-2"><span>Nội dung CK:</span> <span>MHX {watch('phone') || '[SĐT của bạn]'}</span></p>
+                </div>
+                <div className="mt-4">
+                  <label className="block text-sm font-semibold text-slate-700 mb-1">Link ảnh minh chứng (Không bắt buộc)</label>
+                  <input {...register('proofLink')} className="w-full p-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-green-500 text-sm" placeholder="Dán link ảnh cap màn hình CK (Drive, Imgur...)" />
+                </div>
+              </motion.div>
             )}
+          </motion.div>
+        );
+      default: return null;
+    }
+  };
+
+  return (
+    <div className="max-w-6xl mx-auto animate-fade-in pb-20">
+      <div className="flex items-center justify-between mb-8 sm:mb-12 relative px-4">
+        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-1 bg-slate-200 -z-10 rounded-full"></div>
+        <div className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-green-500 -z-10 rounded-full transition-all duration-500" style={{ width: `${((step - 1) / 2) * 100}%` }}></div>
+        {[1, 2, 3].map(i => (
+          <div key={i} className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center font-bold border-4 transition-all duration-300 ${step >= i ? 'bg-green-500 border-green-100 text-white shadow-lg' : 'bg-white border-slate-200 text-slate-400'}`}>
+            {step > i ? <CheckCircle2 className="w-6 h-6" /> : i}
           </div>
+        ))}
+      </div>
 
-          {/* Ô nhập Ghi chú (đã có sẵn) */}
-          <textarea 
-            name="notes" 
-            value={formData.notes} 
-            onChange={handleChange} 
-            placeholder="Ghi chú thêm (không bắt buộc)" 
-            rows="3" 
-            className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 outline-none mt-4"
-          ></textarea>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-12">
+        <div className="lg:col-span-2">
+          <div className="bg-white rounded-3xl p-6 sm:p-10 shadow-sm border border-slate-100 min-h-[500px] flex flex-col">
+            
+            {/* ĐÃ THAY THẾ <form> BẰNG <div> */}
+            <div className="flex-grow">
+              <AnimatePresence mode="wait">
+                {renderStepContent()}
+              </AnimatePresence>
+            </div>
 
-          {/* Ô NHẬP NGƯỜI GIỚI THIỆU MỚI THÊM */}
-          <div className="mt-4">
-            <h3 className="font-semibold text-sm text-gray-700 mb-2">Người giới thiệu (Nếu có)</h3>
-            <input 
-              type="text" 
-              name="referrer" 
-              value={formData.referrer} 
-              onChange={handleChange} 
-              placeholder="Nhập tên hoặc mã người giới thiệu..." 
-              className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 outline-none" 
-            />
+            {/* BUTTONS CONTROL ĐƯỢC CHỐNG LỖI SUBMIT KÉP */}
+            <div className="flex justify-between mt-10 pt-6 border-t border-slate-100">
+              {step > 1 ? (
+                <button type="button" onClick={() => setStep(prev => prev - 1)} className="px-6 py-3 font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors flex items-center gap-2">
+                  <ChevronLeft className="w-5 h-5" /> Quay lại
+                </button>
+              ) : <div></div>}
+
+              {step < 3 ? (
+                <button type="button" onClick={handleNextStep} className="px-8 py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl shadow-md transition-colors flex items-center gap-2">
+                  Tiếp tục <ChevronRight className="w-5 h-5" />
+                </button>
+              ) : (
+                <button 
+                  type="button" 
+                  onClick={handleSubmit(onSubmit)} 
+                  disabled={loading}
+                  className="px-8 py-3 bg-green-500 hover:bg-green-600 disabled:bg-green-300 text-white font-bold rounded-xl shadow-lg shadow-green-500/30 transition-all flex items-center gap-2 hover:scale-105 active:scale-95"
+                >
+                  {loading ? 'Đang xử lý...' : `XÁC NHẬN ĐẶT HÀNG`}
+                </button>
+              )}
+            </div>
           </div>
-          <button 
-            type="submit" 
-            disabled={loading}
-            className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-4 rounded-xl transition-colors shadow-lg shadow-green-500/30 mt-8 disabled:opacity-70 disabled:cursor-not-allowed"
-          >
-            {loading ? 'Đang xử lý...' : `ĐẶT HÀNG - ${new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(getTotalPrice())}`}
-          </button>
-        </form>
+        </div>
 
-        {/* Tóm tắt Đơn hàng */}
-        <div className="bg-gray-50 p-6 rounded-2xl h-fit border border-gray-100">
-          <h3 className="font-bold text-gray-800 mb-4 pb-4 border-b border-gray-200">Đơn hàng của bạn ({items.length} món)</h3>
-          <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
-            {items.map(item => (
-              <div key={item.cartItemId} className="flex justify-between items-center">
-                <div className="flex gap-3">
-                  <div className="w-12 h-12 bg-white rounded border flex-shrink-0">
-                    <img src={item.image || `https://ui-avatars.com/api/?name=${item.name}&background=Edf2f7&color=4A5568`} alt={item.name} className="w-full h-full object-cover rounded" />
+        <div className="lg:col-span-1">
+          <div className="bg-slate-900 rounded-3xl p-6 sm:p-8 text-white sticky top-24 shadow-xl">
+            <h3 className="text-xl font-bold mb-6 pb-6 border-b border-slate-700/50">Tóm tắt đơn hàng</h3>
+            <div className="space-y-5 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
+              {items.map(item => (
+                <div key={item.cartItemId} className="flex gap-4">
+                  <div className="w-16 h-16 bg-white/10 rounded-xl flex-shrink-0 p-1">
+                    <img src={item.image || `https://ui-avatars.com/api/?name=${item.name}&background=ffffff&color=0f172a`} alt={item.name} className="w-full h-full object-cover rounded-lg" />
                   </div>
-                  <div>
-                    <p className="font-medium text-sm text-gray-800">{item.name}</p>
-                    <p className="text-xs text-gray-500">
-                      {item.variant ? `Vị: ${item.variant} ` : ''}x {item.quantity}
-                    </p>
+                  <div className="flex-1">
+                    <p className="font-semibold text-sm leading-snug text-slate-100">{item.name}</p>
+                    {item.variant && <p className="text-xs text-slate-400 mt-0.5">Vị: {item.variant}</p>}
+                    <div className="flex justify-between items-center mt-2">
+                      <span className="text-xs font-medium text-slate-300">SL: {item.quantity}</span>
+                      <span className="font-bold text-green-400">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(item.price * item.quantity)}</span>
+                    </div>
                   </div>
                 </div>
-                <span className="font-semibold text-sm">
-                  {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(item.price * item.quantity)}
-                </span>
+              ))}
+            </div>
+            <div className="mt-6 pt-6 border-t border-slate-700/50">
+              <div className="flex justify-between items-center mb-2 text-slate-300">
+                <span>Tạm tính</span><span>{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(getTotalPrice())}</span>
               </div>
-            ))}
-          </div>
-          <div className="mt-6 pt-4 border-t border-gray-200 flex justify-between items-center">
-            <span className="text-lg font-bold text-gray-800">Tổng cộng</span>
-            <span className="text-xl font-bold text-green-600">
-              {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(getTotalPrice())}
-            </span>
+              <div className="flex justify-between items-center mb-4 text-slate-300">
+                <span>Phí giao hàng</span><span className="text-green-400 font-medium">Miễn phí</span>
+              </div>
+              <div className="flex justify-between items-center pt-4 border-t border-slate-700/50">
+                <span className="text-lg font-bold">Tổng cộng</span>
+                <span className="text-2xl font-extrabold text-white">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(getTotalPrice())}</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>

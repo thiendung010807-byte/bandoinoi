@@ -8,6 +8,7 @@ import Checkout from './pages/Checkout';
 import AdminDashboard from './pages/AdminDashboard';
 import Navbar from './components/Navbar';
 import CartSidebar from './components/CartSidebar';
+import FloatingSupport from './components/FloatingSupport';
 import MyOrders from './pages/MyOrders';
 
 function App() {
@@ -50,7 +51,29 @@ function App() {
               />
             </Routes>
           </main>
-          <Toaster position="bottom-right" />
+          {/* 2. GỌI COMPONENT NÚT HỖ TRỢ */}
+          <FloatingSupport />
+
+          {/* 3. CẤU HÌNH LẠI TOASTER (Giao diện Premium) */}
+          <Toaster 
+            position="top-center"
+            toastOptions={{
+              className: 'font-sans font-medium text-slate-800 rounded-2xl shadow-soft border border-slate-100',
+              duration: 4000,
+              style: {
+                background: 'rgba(255, 255, 255, 0.85)',
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
+                padding: '16px 24px',
+              },
+              success: {
+                iconTheme: { primary: '#22c55e', secondary: '#fff' },
+              },
+              error: {
+                iconTheme: { primary: '#ef4444', secondary: '#fff' },
+              },
+            }} 
+          />
         </div>
       </Router>
     </AuthProvider>
