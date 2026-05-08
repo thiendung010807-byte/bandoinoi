@@ -36,6 +36,11 @@ export default function MyOrders() {
   const [orderToCancel, setOrderToCancel] = useState(null);
   const [cancelReason, setCancelReason] = useState('');
 
+  // ==========================================
+  // DÁN LINK GOOGLE SHEET API CỦA BẠN VÀO ĐÂY
+  // ==========================================
+  const GOOGLE_SHEET_API_URL = "https://script.google.com/macros/s/AKfycbxQ9tjJ2odLUzyhWYNC2cMT-i-pppEwYfbHa-F16o4o7EAhRGA51B_JH4X5ZYXvyK-9/exec";
+
   useEffect(() => {
     if (!currentUser) return;
     const q = query(collection(db, 'orders'), where('userId', '==', currentUser.uid), orderBy('createdAt', 'desc'));
@@ -73,17 +78,36 @@ export default function MyOrders() {
     }
   };
 
-  // Bước 2: Gửi yêu cầu hủy kèm lý do lên Firebase
+  // Bước 2: Gửi yêu cầu hủy kèm lý do lên Firebase VÀ GOOGLE SHEET
   const submitCancelOrder = async () => {
     if (!cancelReason.trim()) return;
     setCancellingId(orderToCancel.id);
 
     try {
+      // 1. Cập nhật Firebase thành 'cancelled'
       await updateDoc(doc(db, 'orders', orderToCancel.id), { 
         status: 'cancelled',
-        cancelReason: cancelReason.trim() // Lưu lý do vào DB
+        cancelReason: cancelReason.trim(),
+        updatedAt: serverTimestamp()
       });
       await updateDoc(doc(db, 'users', currentUser.uid), { lastCancelledAt: serverTimestamp() });
+
+      // 2. Bắn tín hiệu sang Google Sheet (Giống hệt cách Admin làm)
+      if (GOOGLE_SHEET_API_URL && GOOGLE_SHEET_API_URL.startsWith("http")) {
+        const url = `${GOOGLE_SHEET_API_URL}?t=${Date.now()}`; // Chống bộ nhớ đệm
+        
+        await fetch(url, {
+          method: "POST",
+          mode: "no-cors",
+          cache: "no-store",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ 
+            action: "UPDATE_STATUS", 
+            orderId: String(orderToCancel.orderId || orderToCancel.id).trim(), // Truyền mã MHX sang để Sheet tìm
+            status: "cancelled" 
+          })
+        }).catch(e => console.log("Lỗi sync sheet âm thầm", e));
+      }
 
       toast.success("Đã hủy đơn hàng thành công!");
       setOrderToCancel(null); // Đóng Modal
@@ -133,7 +157,7 @@ export default function MyOrders() {
               <div key={order.id} className={`bg-white p-5 sm:p-6 rounded-2xl shadow-sm border ${order.status === 'cancelled' ? 'border-red-100 bg-red-50/30' : 'border-gray-100'}`}>
                 <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-4 pb-4 border-b border-gray-100">
                   <div>
-                    <p className="text-sm text-gray-500">Mã đơn: <span className="font-mono text-gray-800">{order.id}</span></p>
+                    <p className="text-sm text-gray-500">Mã đơn: <span className="font-bold text-slate-800">{order.orderId || order.id}</span></p>
                     <p className="text-xs text-gray-400 mt-1">Đặt lúc: {order.createdAt?.toDate().toLocaleString('vi-VN')}</p>
                   </div>
                   <div className="flex items-center gap-3">

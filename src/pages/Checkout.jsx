@@ -31,6 +31,11 @@ export default function Checkout() {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
 
+  // ==========================================
+  // DÁN LINK GOOGLE SHEET API CỦA BẠN VÀO ĐÂY
+  // ==========================================
+  const GOOGLE_SHEET_API_URL = "https://script.google.com/macros/s/AKfycbxQ9tjJ2odLUzyhWYNC2cMT-i-pppEwYfbHa-F16o4o7EAhRGA51B_JH4X5ZYXvyK-9/exec";
+
   const { register, handleSubmit, trigger, watch, formState: { errors } } = useForm({
     resolver: yupResolver(schema),
     defaultValues: {
@@ -65,23 +70,67 @@ export default function Checkout() {
 
   const onSubmit = async (data) => {
     setLoading(true);
+    
+    const shortOrderId = "MHX-" + Math.random().toString(36).substr(2, 6).toUpperCase();
+    const shipFeeNote = data.addressType === 'NEU' ? 'Miễn phí' : '3k/1km';
+    const deliveryAddress = data.addressType === 'NEU' ? 'Bàn truyền thống (NEU - 185 Trần Đại Nghĩa)' : data.customAddress;
+
     const orderData = {
-      userId: currentUser.uid, userEmail: currentUser.email, customerName: data.fullName, phone: data.phone,
-      address: data.addressType === 'NEU' ? 'Bàn truyền thống (NEU - 185 Trần Đại Nghĩa)' : data.customAddress,
-      deliveryTime: data.deliveryTime, paymentMethod: data.paymentMethod, notes: data.notes, referrer: data.referrer, proofLink: data.proofLink,
+      orderId: shortOrderId, 
+      userId: currentUser.uid, 
+      userEmail: currentUser.email, 
+      customerName: data.fullName, 
+      phone: data.phone,
+      address: deliveryAddress,
+      shippingFee: shipFeeNote, 
+      deliveryTime: data.deliveryTime, 
+      paymentMethod: data.paymentMethod, 
+      notes: data.notes, 
+      referrer: data.referrer, 
+      proofLink: data.proofLink,
       items: items.map(item => ({ productId: item.id, name: item.name, variant: item.variant || null, price: item.price, quantity: item.quantity })),
-      total: getTotalPrice(), status: 'pending', createdAt: serverTimestamp()
+      total: getTotalPrice(), 
+      status: 'pending', 
+      createdAt: serverTimestamp()
+    };
+
+    const sheetData = {
+      action: "NEW_ORDER",
+      orderId: shortOrderId,
+      customerName: data.fullName,
+      phone: `'${data.phone}`,
+      address: deliveryAddress,
+      shipFee: shipFeeNote,
+      itemsDetail: items.map(i => `${i.name}${i.variant ? `(${i.variant})`:''} x${i.quantity}`).join('\n'),
+      totalPrice: getTotalPrice(),
+      payment: data.paymentMethod,
+      deliveryTime: data.deliveryTime ? data.deliveryTime.replace('T', ' ') : '', 
+      referrer: data.referrer || "Không có",
+      notes: data.notes || "Không"
     };
 
     try {
       await addDoc(collection(db, 'orders'), orderData);
       
-      // Tăng số lượng đã bán + Đơn chim mồi
       for (const item of items) {
         const fakeBonus = Math.floor(Math.random() * 4) + 2; 
         const totalIncrease = item.quantity + fakeBonus;
         const productRef = doc(db, 'products', item.id);
         await updateDoc(productRef, { sold: increment(totalIncrease) });
+      }
+
+      // ĐÃ FIX: Thêm AWAIT để trình duyệt phải chờ gửi Sheet xong mới chuyển trang
+      if (GOOGLE_SHEET_API_URL && GOOGLE_SHEET_API_URL.startsWith("http")) {
+        try {
+          await fetch(GOOGLE_SHEET_API_URL, {
+            method: "POST",
+            mode: "no-cors",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify(sheetData)
+          });
+        } catch (err) {
+          console.error("Lỗi kết nối Sheet:", err);
+        }
       }
 
       toast.success('🎉 Đặt hàng thành công!', { duration: 5000 });
@@ -117,11 +166,11 @@ export default function Checkout() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <label className={`cursor-pointer border-2 rounded-xl p-4 flex items-center gap-3 transition-all ${watchAddressType === 'NEU' ? 'border-green-500 bg-green-50/50' : 'border-slate-100 bg-white hover:border-slate-200'}`}>
                 <input type="radio" value="NEU" {...register('addressType')} className="w-4 h-4 text-green-600 focus:ring-green-500" />
-                <div><p className="font-bold text-slate-800">Lấy tại bàn</p><p className="text-xs text-slate-500">Bàn truyền thống NEU</p></div>
+                <div><p className="font-bold text-slate-800">Lấy tại bàn</p><p className="text-xs text-green-600 font-medium">Miễn phí ship</p></div>
               </label>
               <label className={`cursor-pointer border-2 rounded-xl p-4 flex items-center gap-3 transition-all ${watchAddressType === 'OTHER' ? 'border-green-500 bg-green-50/50' : 'border-slate-100 bg-white hover:border-slate-200'}`}>
                 <input type="radio" value="OTHER" {...register('addressType')} className="w-4 h-4 text-green-600 focus:ring-green-500" />
-                <div><p className="font-bold text-slate-800">Giao tận nơi</p><p className="text-xs text-slate-500">Nhập địa chỉ của bạn</p></div>
+                <div><p className="font-bold text-slate-800">Giao tận nơi</p><p className="text-xs text-orange-600 font-medium">Phí ship: 3k/1km</p></div>
               </label>
             </div>
             {watchAddressType === 'OTHER' && (
@@ -208,15 +257,12 @@ export default function Checkout() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-12">
         <div className="lg:col-span-2">
           <div className="bg-white rounded-3xl p-6 sm:p-10 shadow-sm border border-slate-100 min-h-[500px] flex flex-col">
-            
-            {/* ĐÃ THAY THẾ <form> BẰNG <div> */}
             <div className="flex-grow">
               <AnimatePresence mode="wait">
                 {renderStepContent()}
               </AnimatePresence>
             </div>
 
-            {/* BUTTONS CONTROL ĐƯỢC CHỐNG LỖI SUBMIT KÉP */}
             <div className="flex justify-between mt-10 pt-6 border-t border-slate-100">
               {step > 1 ? (
                 <button type="button" onClick={() => setStep(prev => prev - 1)} className="px-6 py-3 font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors flex items-center gap-2">
@@ -235,7 +281,7 @@ export default function Checkout() {
                   disabled={loading}
                   className="px-8 py-3 bg-green-500 hover:bg-green-600 disabled:bg-green-300 text-white font-bold rounded-xl shadow-lg shadow-green-500/30 transition-all flex items-center gap-2 hover:scale-105 active:scale-95"
                 >
-                  {loading ? 'Đang xử lý...' : `XÁC NHẬN ĐẶT HÀNG`}
+                  {loading ? 'Đang xử lý...' : 'XÁC NHẬN ĐẶT HÀNG'}
                 </button>
               )}
             </div>
@@ -266,13 +312,22 @@ export default function Checkout() {
               <div className="flex justify-between items-center mb-2 text-slate-300">
                 <span>Tạm tính</span><span>{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(getTotalPrice())}</span>
               </div>
+              
               <div className="flex justify-between items-center mb-4 text-slate-300">
-                <span>Phí giao hàng</span><span className="text-green-400 font-medium">Miễn phí</span>
+                <span>Phí giao hàng</span>
+                <span className={`font-medium ${watchAddressType === 'NEU' ? 'text-green-400' : 'text-orange-400'}`}>
+                  {watchAddressType === 'NEU' ? 'Miễn phí' : '3k/1km'}
+                </span>
               </div>
+              
               <div className="flex justify-between items-center pt-4 border-t border-slate-700/50">
                 <span className="text-lg font-bold">Tổng cộng</span>
                 <span className="text-2xl font-extrabold text-white">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(getTotalPrice())}</span>
               </div>
+              
+              {watchAddressType === 'OTHER' && (
+                <p className="text-[10px] text-slate-400 text-center mt-3 italic">* Phí ship sẽ được báo chính xác khi nhân viên liên hệ xác nhận.</p>
+              )}
             </div>
           </div>
         </div>
