@@ -37,3 +37,24 @@
   opacity: 0 !important;
   display: none !important;
 }
+
+/* ===== SCROLL PERFORMANCE OPTIMIZATION ===== */
+/* Tạo GPU layer cho các animated element để tránh repaint */
+html {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* contain: layout giới hạn phạm vi layout recalculation của từng card */
+.product-card-contain {
+  contain: layout style;
+}
+
+/* Đảm bảo image transitions không gây layout shift */
+img {
+  will-change: auto;
+}
+
+/* Tối ưu các card animated */
+.group {
+  transform: translateZ(0);
+}

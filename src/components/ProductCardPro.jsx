@@ -22,6 +22,16 @@ export default function ProductCardPro({ product }) {
     }
   }, [product, isModalOpen]);
 
+  // Lock body scroll khi modal mở
+  useEffect(() => {
+    if (isModalOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [isModalOpen]);
+
   const soldCount = product.sold || 0;
   const isOutOfStock = product.inStock === false;
   const isHot = soldCount >= 30 && !isOutOfStock;
@@ -101,6 +111,8 @@ export default function ProductCardPro({ product }) {
               <motion.div 
                 initial={{ width: 0 }} 
                 whileInView={{ width: `${progressPercent}%` }} 
+                viewport={{ once: true }}
+                transition={{ duration: 0.6, ease: 'easeOut' }}
                 className={`h-1 md:h-1.5 rounded-full ${isHot ? 'bg-gradient-to-r from-orange-400 to-orange-500' : 'bg-slate-300'}`} 
               />
             </div>
