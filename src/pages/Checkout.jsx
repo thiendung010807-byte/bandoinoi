@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
@@ -7,9 +7,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useCart } from '../store/useCart';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../config/firebase';
-import { collection, addDoc, serverTimestamp, doc, updateDoc, increment } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, updateDoc, increment, onSnapshot } from 'firebase/firestore';
 import toast from 'react-hot-toast';
-import { User, MapPin, Clock, CreditCard, ChevronRight, ChevronLeft, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { 
+  User, MapPin, Clock, CreditCard, ChevronRight, ChevronLeft, 
+  ShieldCheck, CheckCircle2, Loader2 
+} from 'lucide-react'; // ĐÃ THÊM LOADER2 Ở ĐÂY
 
 const schema = yup.object().shape({
   fullName: yup.string().required('Vui lòng nhập họ tên'),
@@ -29,7 +32,8 @@ export default function Checkout() {
   const navigate = useNavigate();
   
   const [step, setStep] = useState(1);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(false); // STATE QUẢN LÝ LOADING
+  const [ctvList, setCtvList] = useState([]); 
 
   // ==========================================
   // DÁN LINK GOOGLE SHEET API CỦA BẠN VÀO ĐÂY
@@ -47,6 +51,13 @@ export default function Checkout() {
 
   const watchAddressType = watch('addressType');
   const watchPaymentMethod = watch('paymentMethod');
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'ctvs'), (snapshot) => {
+      setCtvList(snapshot.docs.map(doc => doc.data().name));
+    });
+    return () => unsub();
+  }, []);
 
   if (items.length === 0 && !loading) {
     return (
@@ -69,7 +80,7 @@ export default function Checkout() {
   };
 
   const onSubmit = async (data) => {
-    setLoading(true);
+    setLoading(true); // BẬT MÀN HÌNH LOADING
     
     const shortOrderId = "MHX-" + Math.random().toString(36).substr(2, 6).toUpperCase();
     const shipFeeNote = data.addressType === 'NEU' ? 'Miễn phí' : '3k/1km';
@@ -101,7 +112,7 @@ export default function Checkout() {
       phone: `'${data.phone}`,
       address: deliveryAddress,
       shipFee: shipFeeNote,
-      itemsDetail: items.map(i => `${i.name}${i.variant ? `(${i.variant})`:''} x${i.quantity}`).join('\n'),
+      itemsDetail: items.map(i => `• ${i.name}${i.variant ? ` (${i.variant})`:''} x${i.quantity}`).join('\n'),
       totalPrice: getTotalPrice(),
       payment: data.paymentMethod,
       deliveryTime: data.deliveryTime ? data.deliveryTime.replace('T', ' ') : '', 
@@ -119,12 +130,13 @@ export default function Checkout() {
         await updateDoc(productRef, { sold: increment(totalIncrease) });
       }
 
-      // ĐÃ FIX: Thêm AWAIT để trình duyệt phải chờ gửi Sheet xong mới chuyển trang
       if (GOOGLE_SHEET_API_URL && GOOGLE_SHEET_API_URL.startsWith("http")) {
+        const url = `${GOOGLE_SHEET_API_URL}?t=${Date.now()}`;
         try {
-          await fetch(GOOGLE_SHEET_API_URL, {
+          await fetch(url, {
             method: "POST",
             mode: "no-cors",
+            cache: "no-store", 
             headers: { "Content-Type": "text/plain;charset=utf-8" },
             body: JSON.stringify(sheetData)
           });
@@ -138,9 +150,10 @@ export default function Checkout() {
       navigate('/my-orders'); 
     } catch (error) {
       toast.error('Lỗi khi đặt hàng, vui lòng thử lại!');
-    } finally {
-      setLoading(false);
-    }
+      setLoading(false); // NẾU LỖI THÌ TẮT LOADING TRƯỚC ĐỂ KHÁCH BẤM LẠI
+    } 
+    // KHÔNG dùng finally { setLoading(false) } ở đây vì hàm navigate() đang chuyển trang. 
+    // Giữ nguyên loading=true cho đến khi trang mới được render sẽ tạo cảm giác mượt hơn.
   };
 
   const renderStepContent = () => {
@@ -190,10 +203,17 @@ export default function Checkout() {
               <input type="datetime-local" {...register('deliveryTime')} className={`w-full p-3.5 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-green-500 ${errors.deliveryTime ? 'border-red-500' : 'border-slate-200'}`} />
               {errors.deliveryTime && <p className="text-red-500 text-xs mt-1">{errors.deliveryTime.message}</p>}
             </div>
+            
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1 mt-4">Người giới thiệu (Nếu có)</label>
-              <input {...register('referrer')} className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-green-500" placeholder="Mã CTV hoặc tên người giới thiệu" />
+              <input list="ctv-suggestions" {...register('referrer')} className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-green-500" placeholder="Gõ tên để tìm CTV..." autoComplete="off" />
+              <datalist id="ctv-suggestions">
+                {ctvList.map((name, idx) => (
+                  <option key={idx} value={name} />
+                ))}
+              </datalist>
             </div>
+            
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1 mt-4">Ghi chú thêm</label>
               <textarea {...register('notes')} rows="3" className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-green-500" placeholder="Lưu ý về món ăn, địa chỉ..."></textarea>
@@ -243,7 +263,28 @@ export default function Checkout() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto animate-fade-in pb-20">
+    <div className="max-w-6xl mx-auto animate-fade-in pb-20 relative">
+      
+      {/* ==========================================
+          MÀN HÌNH LOADING KHÓA TƯƠNG TÁC (OVERLAY)
+          ========================================== */}
+      <AnimatePresence>
+        {loading && (
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-[2px] z-[9999] flex flex-col items-center justify-center text-white"
+          >
+            <div className="bg-white p-8 rounded-3xl flex flex-col items-center shadow-2xl text-center">
+              <Loader2 className="w-12 h-12 text-green-500 animate-spin mb-4" />
+              <p className="text-slate-800 font-bold text-lg">Đang xử lý đơn hàng...</p>
+              <p className="text-slate-500 text-sm mt-1">Vui lòng không tắt trình duyệt</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="flex items-center justify-between mb-8 sm:mb-12 relative px-4">
         <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-1 bg-slate-200 -z-10 rounded-full"></div>
         <div className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-green-500 -z-10 rounded-full transition-all duration-500" style={{ width: `${((step - 1) / 2) * 100}%` }}></div>
@@ -265,13 +306,13 @@ export default function Checkout() {
 
             <div className="flex justify-between mt-10 pt-6 border-t border-slate-100">
               {step > 1 ? (
-                <button type="button" onClick={() => setStep(prev => prev - 1)} className="px-6 py-3 font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors flex items-center gap-2">
+                <button type="button" onClick={() => setStep(prev => prev - 1)} disabled={loading} className="px-6 py-3 font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors flex items-center gap-2">
                   <ChevronLeft className="w-5 h-5" /> Quay lại
                 </button>
               ) : <div></div>}
 
               {step < 3 ? (
-                <button type="button" onClick={handleNextStep} className="px-8 py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl shadow-md transition-colors flex items-center gap-2">
+                <button type="button" onClick={handleNextStep} disabled={loading} className="px-8 py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl shadow-md transition-colors flex items-center gap-2">
                   Tiếp tục <ChevronRight className="w-5 h-5" />
                 </button>
               ) : (
@@ -281,7 +322,7 @@ export default function Checkout() {
                   disabled={loading}
                   className="px-8 py-3 bg-green-500 hover:bg-green-600 disabled:bg-green-300 text-white font-bold rounded-xl shadow-lg shadow-green-500/30 transition-all flex items-center gap-2 hover:scale-105 active:scale-95"
                 >
-                  {loading ? 'Đang xử lý...' : 'XÁC NHẬN ĐẶT HÀNG'}
+                  XÁC NHẬN ĐẶT HÀNG
                 </button>
               )}
             </div>

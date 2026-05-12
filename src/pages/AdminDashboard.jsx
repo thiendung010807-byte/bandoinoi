@@ -5,95 +5,130 @@ import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { 
   Package, DollarSign, Clock, ShoppingBag, Plus, Edit, Trash2, X, 
-  Search, LayoutDashboard, Filter, TrendingUp, Image as ImageIcon, ExternalLink
+  Search, LayoutDashboard, Filter, TrendingUp, Image as ImageIcon, 
+  ExternalLink, Users, Award, Check, Loader2
 } from 'lucide-react';
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('overview'); 
   const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState([]);
+  const [ctvs, setCtvs] = useState([]); 
   const [loading, setLoading] = useState(true);
   
+  // STATE LOADING SCREEN ĐỒNG BỘ SHEET
+  const [isSyncing, setIsSyncing] = useState(false);
+
   const [filter, setFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
+  // STATE SẢN PHẨM
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  
   const [productForm, setProductForm] = useState({ 
     name: '', price: '', description: '', image: '', inStock: true, isCombo: false, 
     variantsList: [] 
   });
 
+  // STATE CỘNG TÁC VIÊN
+  const [newCtvEmail, setNewCtvEmail] = useState('');
+  const [newCtvName, setNewCtvName] = useState(''); 
+  const [editingCtvId, setEditingCtvId] = useState(null);
+  const [editCtvName, setEditCtvName] = useState('');
+
   // ==========================================
-  // DÁN 2 LINK GOOGLE SHEET CỦA BẠN VÀO ĐÂY
+  // DÁN LINK GOOGLE SHEET API VÀO ĐÂY
   // ==========================================
   const GOOGLE_SHEET_API_URL = "https://script.google.com/macros/s/AKfycbxQ9tjJ2odLUzyhWYNC2cMT-i-pppEwYfbHa-F16o4o7EAhRGA51B_JH4X5ZYXvyK-9/exec";
   const GOOGLE_SHEET_VIEW_URL = "https://docs.google.com/spreadsheets/d/1-CGudmwK19r_0d6GXnldiDq9ft15RMA079GsHggP7mo/edit?usp=sharing";
 
   useEffect(() => {
     const qOrders = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
-    const unsubOrders = onSnapshot(qOrders, (snapshot) => {
-      setOrders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
+    const unsubOrders = onSnapshot(qOrders, (snapshot) => setOrders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
 
     const unsubProducts = onSnapshot(collection(db, 'products'), (snapshot) => {
       setProducts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setLoading(false);
     });
 
-    return () => { unsubOrders(); unsubProducts(); };
+    const unsubCtvs = onSnapshot(collection(db, 'ctvs'), (snapshot) => setCtvs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+
+    return () => { unsubOrders(); unsubProducts(); unsubCtvs(); };
   }, []);
 
   // ==========================================
-  // CẬP NHẬT TRẠNG THÁI (PHIÊN BẢN CHỐNG CACHE 100%)
+  // CẬP NHẬT TRẠNG THÁI + LOADING SCREEN
   // ==========================================
   const handleUpdateStatus = async (order, newStatus) => {
+    setIsSyncing(true); // BẬT MÀN HÌNH LOADING
     try {
-      // 1. Cập nhật Firebase ngay lập tức cho web mượt
+      // 1. Cập nhật Firebase
       await updateDoc(doc(db, 'orders', order.id), { 
-        status: newStatus,
-        updatedAt: serverTimestamp()
+        status: newStatus, 
+        updatedAt: serverTimestamp() 
       });
 
-      // 2. Bắn sang Sheet với tuyệt chiêu chống Cache
+      // 2. Cập nhật Google Sheet
       if (GOOGLE_SHEET_API_URL && GOOGLE_SHEET_API_URL.startsWith("http")) {
-        // Gắn thêm một dãy số ngẫu nhiên vào đuôi link để trình duyệt tưởng đây là link mới
         const url = `${GOOGLE_SHEET_API_URL}?t=${Date.now()}`;
-        
         await fetch(url, {
-          method: "POST",
-          mode: "no-cors",
-          cache: "no-store", // Lệnh cấm trình duyệt lưu bộ nhớ tạm
+          method: "POST", 
+          mode: "no-cors", 
+          cache: "no-store",
           headers: { "Content-Type": "text/plain;charset=utf-8" },
           body: JSON.stringify({ 
             action: "UPDATE_STATUS", 
-            orderId: String(order.orderId || order.id), // Đảm bảo luôn là chuỗi
+            orderId: String(order.orderId || order.id), 
             status: newStatus 
           })
-        }).catch(e => console.log("Lỗi sync sheet âm thầm", e));
+        });
       }
-
-      toast.success('Đã cập nhật trạng thái!');
-    } catch (error) { 
-      toast.error('Lỗi cập nhật trạng thái.'); 
+      toast.success('Đồng bộ trạng thái thành công!');
+    } catch (error) {
+      console.error(error);
+      toast.error('Lỗi khi đồng bộ dữ liệu!');
+    } finally {
+      setIsSyncing(false); // TẮT MÀN HÌNH LOADING
     }
   };
 
-  const filteredOrders = orders.filter(o => {
-    const matchesFilter = filter === 'all' || o.status === filter;
-    const searchLower = searchQuery.toLowerCase();
-    const matchesSearch = o.customerName.toLowerCase().includes(searchLower) || 
-                          o.phone.includes(searchLower) || 
-                          o.id.toLowerCase().includes(searchLower) ||
-                          (o.orderId && o.orderId.toLowerCase().includes(searchLower));
-    return matchesFilter && matchesSearch;
-  });
+  // ==========================================
+  // LOGIC CỘNG TÁC VIÊN
+  // ==========================================
+  const handleAddCTV = async (e) => {
+    e.preventDefault();
+    if (!newCtvEmail.trim() || !newCtvName.trim()) return;
+    try {
+      await addDoc(collection(db, 'ctvs'), { 
+        email: newCtvEmail.trim().toLowerCase(),
+        name: newCtvName.trim(), 
+        createdAt: serverTimestamp() 
+      });
+      setNewCtvEmail('');
+      setNewCtvName('');
+      toast.success('Đã thêm CTV mới!');
+    } catch (error) { 
+      console.error(error);
+      toast.error('Lỗi thêm CTV! Xem chi tiết trong Console (F12).'); 
+    }
+  };
 
+  const handleSaveEditCTV = async (ctvId) => {
+    if (!editCtvName.trim()) return;
+    try {
+      await updateDoc(doc(db, 'ctvs', ctvId), { name: editCtvName.trim() });
+      setEditingCtvId(null);
+      toast.success('Đã cập nhật tên CTV!');
+    } catch (error) { toast.error('Lỗi cập nhật CTV!'); }
+  };
+
+  // ==========================================
+  // LOGIC SẢN PHẨM
+  // ==========================================
   const handleAddVariantRow = () => setProductForm(prev => ({...prev, variantsList: [...prev.variantsList, { name: '', image: '' }]}));
   const handleRemoveVariantRow = (index) => setProductForm(prev => ({...prev, variantsList: prev.variantsList.filter((_, i) => i !== index)}));
   const handleVariantChange = (index, field, value) => {
-    const newList = [...productForm.variantsList];
+    const newList = [...productForm.variantsList]; 
     newList[index][field] = value;
     setProductForm(prev => ({ ...prev, variantsList: newList }));
   };
@@ -103,43 +138,73 @@ export default function AdminDashboard() {
     if (!productForm.name || !productForm.price) return toast.error('Vui lòng nhập tên và giá!');
 
     const validVariants = productForm.variantsList.filter(v => v.name.trim() !== '' || v.image.trim() !== '');
-    const variantsArray = validVariants.map(v => v.name.trim());
-    const variantImagesArray = validVariants.map(v => v.image.trim());
-
     const productData = {
-      name: productForm.name,
-      price: Number(productForm.price),
-      description: productForm.description,
-      image: productForm.image,
-      inStock: productForm.inStock,
-      isCombo: productForm.isCombo,
-      variants: variantsArray,
-      variantImages: variantImagesArray,
+      name: productForm.name, 
+      price: Number(productForm.price), 
+      description: productForm.description, 
+      image: productForm.image, 
+      inStock: productForm.inStock, 
+      isCombo: productForm.isCombo, 
+      variants: validVariants.map(v => v.name.trim()), 
+      variantImages: validVariants.map(v => v.image.trim()), 
       updatedAt: serverTimestamp()
     };
 
     try {
-      if (isEditing) {
-        await updateDoc(doc(db, 'products', editingId), productData);
-        toast.success('Cập nhật thành công!');
-      } else {
-        await addDoc(collection(db, 'products'), { ...productData, sold: 0 });
-        toast.success('Đã thêm món mới!');
+      if (isEditing) { 
+        await updateDoc(doc(db, 'products', editingId), productData); 
+        toast.success('Cập nhật thành công!'); 
+      } else { 
+        await addDoc(collection(db, 'products'), { ...productData, sold: 0 }); 
+        toast.success('Đã thêm món mới!'); 
       }
       resetForm();
     } catch (error) { toast.error('Lỗi khi lưu!'); }
   };
 
   const resetForm = () => {
-    setProductForm({ name: '', price: '', description: '', image: '', inStock: true, isCombo: false, variantsList: [] });
-    setIsEditing(false);
+    setProductForm({ name: '', price: '', description: '', image: '', inStock: true, isCombo: false, variantsList: [] }); 
+    setIsEditing(false); 
     setEditingId(null);
   };
+
+  // BỘ LỌC ĐƠN HÀNG
+  const filteredOrders = orders.filter(o => {
+    const matchesFilter = filter === 'all' || o.status === filter;
+    const searchLower = searchQuery.toLowerCase();
+    const matchesSearch = o.customerName.toLowerCase().includes(searchLower) || 
+                          o.phone.includes(searchLower) || 
+                          o.id.toLowerCase().includes(searchLower) || 
+                          (o.orderId && o.orderId.toLowerCase().includes(searchLower)) || 
+                          (o.referrer && o.referrer.toLowerCase().includes(searchLower));
+    return matchesFilter && matchesSearch;
+  });
 
   if (loading) return <div className="text-center py-20 text-green-600 font-bold animate-pulse">Đang tải trung tâm quản trị...</div>;
 
   return (
-    <div className="max-w-7xl mx-auto space-y-8 animate-fade-in pb-20">
+    <div className="max-w-7xl mx-auto space-y-8 animate-fade-in pb-20 relative">
+      
+      {/* ==========================================
+          MÀN HÌNH LOADING KHI ĐANG ĐỒNG BỘ
+          ========================================== */}
+      <AnimatePresence>
+        {isSyncing && (
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-[2px] z-[9999] flex flex-col items-center justify-center text-white"
+          >
+            <div className="bg-white p-8 rounded-3xl flex flex-col items-center shadow-2xl">
+              <Loader2 className="w-12 h-12 text-green-500 animate-spin mb-4" />
+              <p className="text-slate-800 font-bold text-lg">Đang đồng bộ Sheet...</p>
+              <p className="text-slate-400 text-sm mt-1">Vui lòng không tắt trình duyệt</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 border-b border-slate-200 pb-6 px-4 sm:px-0">
         <div>
           <h1 className="text-3xl font-heading font-extrabold text-slate-900 tracking-tight">Admin Dashboard</h1>
@@ -151,7 +216,8 @@ export default function AdminDashboard() {
         {[
           { id: 'overview', icon: LayoutDashboard, label: 'Tổng quan' },
           { id: 'orders', icon: Package, label: 'Đơn hàng' },
-          { id: 'products', icon: ShoppingBag, label: 'Sản phẩm' }
+          { id: 'products', icon: ShoppingBag, label: 'Sản phẩm' },
+          { id: 'ctv', icon: Users, label: 'Cộng tác viên' }
         ].map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex items-center gap-2 px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl font-bold transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white text-green-600 shadow-sm' : 'text-slate-600 hover:bg-white/50'}`}>
             <tab.icon className="w-5 h-5" /> {tab.label}
@@ -160,30 +226,83 @@ export default function AdminDashboard() {
       </div>
 
       <AnimatePresence mode="wait">
+        
         {/* ==================== TAB TỔNG QUAN ==================== */}
         {activeTab === 'overview' && (
           <motion.div key="overview" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-6 px-4 sm:px-0">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-5">
-                <div className="p-4 bg-green-50 text-green-600 rounded-2xl"><DollarSign className="w-8 h-8" /></div>
-                <div>
-                  <p className="text-slate-500 text-sm font-semibold mb-1">Doanh thu thực</p>
-                  <h3 className="text-xl font-extrabold text-slate-900">
-                    {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(orders.filter(o => o.status === 'done').reduce((a, b) => a + b.total, 0))}
-                  </h3>
-                </div>
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-5"><div className="p-4 bg-green-50 text-green-600 rounded-2xl"><DollarSign className="w-8 h-8" /></div><div><p className="text-slate-500 text-sm font-semibold mb-1">Doanh thu thực</p><h3 className="text-xl font-extrabold text-slate-900">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(orders.filter(o => o.status === 'done').reduce((a, b) => a + b.total, 0))}</h3></div></div>
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-5"><div className="p-4 bg-blue-50 text-blue-600 rounded-2xl"><Package className="w-8 h-8" /></div><div><p className="text-slate-500 text-sm font-semibold mb-1">Tổng đơn</p><h3 className="text-2xl font-extrabold text-slate-900">{orders.length}</h3></div></div>
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-5"><div className="p-4 bg-orange-50 text-orange-600 rounded-2xl"><Clock className="w-8 h-8" /></div><div><p className="text-slate-500 text-sm font-semibold mb-1">Chờ xác nhận</p><h3 className="text-2xl font-extrabold text-slate-900">{orders.filter(o => o.status === 'pending').length}</h3></div></div>
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-5"><div className="p-4 bg-red-50 text-red-600 rounded-2xl"><TrendingUp className="w-8 h-8" /></div><div><p className="text-slate-500 text-sm font-semibold mb-1">Đơn hủy</p><h3 className="text-2xl font-extrabold text-slate-900">{orders.filter(o => o.status === 'cancelled').length}</h3></div></div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* ==================== TAB CTV ==================== */}
+        {activeTab === 'ctv' && (
+          <motion.div key="ctv" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-6 px-4 sm:px-0">
+            <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
+              <div>
+                <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Award className="w-6 h-6 text-orange-500" /> Quản lý Cộng Tác Viên</h2>
+                <p className="text-sm text-slate-500 mt-1">Nhập Email (để tự nhận diện) và Họ tên (để gợi ý cho khách).</p>
               </div>
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-5">
-                <div className="p-4 bg-blue-50 text-blue-600 rounded-2xl"><Package className="w-8 h-8" /></div>
-                <div><p className="text-slate-500 text-sm font-semibold mb-1">Tổng đơn</p><h3 className="text-2xl font-extrabold text-slate-900">{orders.length}</h3></div>
-              </div>
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-5">
-                <div className="p-4 bg-orange-50 text-orange-600 rounded-2xl"><Clock className="w-8 h-8" /></div>
-                <div><p className="text-slate-500 text-sm font-semibold mb-1">Chờ xác nhận</p><h3 className="text-2xl font-extrabold text-slate-900">{orders.filter(o => o.status === 'pending').length}</h3></div>
-              </div>
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-5">
-                <div className="p-4 bg-red-50 text-red-600 rounded-2xl"><TrendingUp className="w-8 h-8" /></div>
-                <div><p className="text-slate-500 text-sm font-semibold mb-1">Đơn hủy</p><h3 className="text-2xl font-extrabold text-slate-900">{orders.filter(o => o.status === 'cancelled').length}</h3></div>
+              <form onSubmit={handleAddCTV} className="flex flex-col sm:flex-row gap-2 w-full xl:w-auto">
+                <input type="email" value={newCtvEmail} onChange={(e) => setNewCtvEmail(e.target.value)} placeholder="Email Google của CTV..." className="w-full sm:w-56 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-orange-500 text-sm" required />
+                <input type="text" value={newCtvName} onChange={(e) => setNewCtvName(e.target.value)} placeholder="Họ và Tên (Gợi ý cho khách)..." className="w-full sm:w-56 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-orange-500 text-sm" required />
+                <button type="submit" className="px-5 py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl shadow-md transition-all whitespace-nowrap">Thêm CTV</button>
+              </form>
+            </div>
+
+            <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[800px]">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-100 text-xs text-slate-500 uppercase tracking-wider font-bold">
+                      <th className="p-5">Thông tin CTV</th><th className="p-5 text-center">Đơn chờ / Giao</th><th className="p-5 text-center">Đơn thành công</th><th className="p-5 text-right">Doanh thu mang lại</th><th className="p-5 text-center">Hành động</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {ctvs.length === 0 ? (<tr><td colSpan="5" className="p-10 text-center text-slate-400">Chưa có CTV nào.</td></tr>) : (
+                      ctvs.map(ctv => {
+                        const ctvOrders = orders.filter(o => o.referrer && o.referrer.toLowerCase() === ctv.name.toLowerCase());
+                        const doneOrders = ctvOrders.filter(o => o.status === 'done');
+                        const pendingOrders = ctvOrders.filter(o => o.status !== 'done' && o.status !== 'cancelled');
+                        const revenue = doneOrders.reduce((sum, o) => sum + o.total, 0);
+
+                        return (
+                          <tr key={ctv.id} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="p-5">
+                              <p className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-green-500"></span> {ctv.email}
+                              </p>
+                              {editingCtvId === ctv.id ? (
+                                <div className="flex items-center gap-2 mt-2">
+                                  <input type="text" value={editCtvName} onChange={(e) => setEditCtvName(e.target.value)} className="p-1.5 px-3 border border-slate-300 rounded-lg text-sm w-48 outline-none focus:border-orange-500" placeholder="Tên mới..." />
+                                  <button onClick={() => handleSaveEditCTV(ctv.id)} className="p-1.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200"><Check className="w-4 h-4"/></button>
+                                  <button onClick={() => setEditingCtvId(null)} className="p-1.5 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200"><X className="w-4 h-4"/></button>
+                                </div>
+                              ) : (
+                                <p className="text-orange-600 font-bold text-sm mt-1 flex items-center gap-1">
+                                  Họ Tên hiển thị: <span className="bg-orange-50 border border-orange-100 px-2 py-0.5 rounded-md">{ctv.name}</span>
+                                </p>
+                              )}
+                            </td>
+                            <td className="p-5 text-center font-medium text-slate-600">{pendingOrders.length}</td>
+                            <td className="p-5 text-center font-bold text-green-600">{doneOrders.length}</td>
+                            <td className="p-5 text-right font-extrabold text-slate-900">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(revenue)}</td>
+                            <td className="p-5 text-center">
+                              <div className="flex justify-center gap-2">
+                                <button onClick={() => { setEditingCtvId(ctv.id); setEditCtvName(ctv.name); }} className="p-2 text-slate-400 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 rounded-lg transition-colors"><Edit className="w-4 h-4"/></button>
+                                <button onClick={() => { if(window.confirm('Xóa CTV này?')) deleteDoc(doc(db, 'ctvs', ctv.id)) }} className="p-2 text-slate-400 hover:text-red-600 bg-slate-50 hover:bg-red-50 rounded-lg transition-colors"><Trash2 className="w-4 h-4"/></button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
           </motion.div>
@@ -195,7 +314,7 @@ export default function AdminDashboard() {
             <div className="p-4 sm:p-6 border-b border-slate-100 bg-slate-50/50 flex flex-col lg:flex-row gap-4 justify-between items-center">
               <div className="relative w-full lg:w-96">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                <input type="text" placeholder="Tìm tên khách, SĐT, mã MHX..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-green-500 transition-all shadow-sm text-sm" />
+                <input type="text" placeholder="Tìm tên, SĐT, mã đơn, CTV..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-green-500 transition-all shadow-sm text-sm" />
               </div>
               <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
                 <div className="relative flex-1 sm:flex-none">
@@ -204,8 +323,6 @@ export default function AdminDashboard() {
                     <option value="all">Tất cả trạng thái</option><option value="pending">Chờ xác nhận</option><option value="confirmed">Đã xác nhận</option><option value="shipping">Đang giao</option><option value="done">Hoàn thành</option><option value="cancelled">Đã hủy</option>
                   </select>
                 </div>
-                
-                {/* ĐÃ SỬA: CHỈ HIỂN THỊ NÚT XEM FILE LIVE SHEET */}
                 <a href={GOOGLE_SHEET_VIEW_URL} target="_blank" rel="noreferrer" className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl transition-all shadow-md">
                   <ExternalLink className="w-5 h-5" /> <span className="text-sm">Mở File Live</span>
                 </a>
@@ -221,16 +338,14 @@ export default function AdminDashboard() {
                       <tr key={order.id} className="hover:bg-slate-50/50 transition-colors group">
                         <td className="p-5 align-top">
                           <p className="font-bold text-slate-900 text-base">{order.customerName}</p>
-                          <p className="text-[11px] font-bold text-blue-600 bg-blue-50 w-fit px-2 py-0.5 rounded-md mt-1 border border-blue-100">
-                            {order.orderId || order.id}
-                          </p>
+                          <p className="text-[11px] font-bold text-blue-600 bg-blue-50 w-fit px-2 py-0.5 rounded-md mt-1 border border-blue-100">{order.orderId || order.id}</p>
                           <p className="text-slate-500 font-medium text-sm mt-1">{order.phone}</p>
                           <p className="text-slate-400 text-xs mt-2 max-w-[200px] leading-relaxed">{order.address}</p>
                         </td>
                         <td className="p-5 align-top max-w-xs">
                           <ul className="space-y-1.5 text-sm">{order.items.map((item, idx) => (<li key={idx} className="text-slate-700"><span className="font-bold text-slate-900">{item.quantity}x</span> {item.name} {item.variant && <span className="text-slate-400">({item.variant})</span>}</li>))}</ul>
                           {order.notes && <p className="mt-3 text-xs text-orange-700 bg-orange-50 p-2 rounded-lg border border-orange-100"><span className="font-bold">Ghi chú:</span> {order.notes}</p>}
-                          {order.referrer && <p className="mt-2 text-xs text-blue-700 bg-blue-50 p-2 rounded-lg border border-blue-100"><span className="font-bold">Mã GT:</span> {order.referrer}</p>}
+                          {order.referrer && <p className="mt-2 text-xs text-orange-600 bg-orange-100/50 p-2 rounded-lg font-semibold flex items-center gap-1"><Users className="w-3 h-3"/> CTV: {order.referrer}</p>}
                         </td>
                         <td className="p-5 align-top">
                           <p className="font-bold text-green-600 text-lg">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(order.total)}</p>
@@ -244,7 +359,12 @@ export default function AdminDashboard() {
                           {order.status === 'cancelled' ? (
                             <div><span className="inline-block bg-red-100 text-red-700 text-xs rounded-full px-3 py-1 font-bold">Đã hủy</span>{order.cancelReason && <p className="text-xs text-red-600 mt-2 leading-relaxed max-w-[150px]"><span className="font-bold">Lý do:</span> {order.cancelReason}</p>}</div>
                           ) : (
-                            <select value={order.status} onChange={(e) => handleUpdateStatus(order, e.target.value)} className={`text-sm rounded-xl px-4 py-2 font-bold outline-none cursor-pointer border-2 transition-all appearance-none pr-8 ${order.status === 'pending' ? 'border-orange-200 bg-orange-50 text-orange-700' : ''} ${order.status === 'done' ? 'border-green-200 bg-green-50 text-green-700' : ''} ${order.status === 'shipping' ? 'border-purple-200 bg-purple-50 text-purple-700' : ''} ${order.status === 'confirmed' ? 'border-blue-200 bg-blue-50 text-blue-700' : ''}`}>
+                            <select 
+                              value={order.status} 
+                              disabled={isSyncing} // Khóa select khi đang sync
+                              onChange={(e) => handleUpdateStatus(order, e.target.value)} 
+                              className={`text-sm rounded-xl px-4 py-2 font-bold outline-none cursor-pointer border-2 transition-all appearance-none pr-8 ${isSyncing ? 'opacity-50 cursor-not-allowed' : ''} ${order.status === 'pending' ? 'border-orange-200 bg-orange-50 text-orange-700' : ''} ${order.status === 'done' ? 'border-green-200 bg-green-50 text-green-700' : ''} ${order.status === 'shipping' ? 'border-purple-200 bg-purple-50 text-purple-700' : ''} ${order.status === 'confirmed' ? 'border-blue-200 bg-blue-50 text-blue-700' : ''}`}
+                            >
                               <option value="pending">Chờ xác nhận</option><option value="confirmed">Đã xác nhận</option><option value="shipping">Đang giao</option><option value="done">Hoàn thành</option>
                             </select>
                           )}

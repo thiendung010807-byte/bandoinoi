@@ -11,50 +11,30 @@ import CartSidebar from './components/CartSidebar';
 import FloatingSupport from './components/FloatingSupport';
 import MyOrders from './pages/MyOrders';
 
+// 1. IMPORT COMPONENT BAY
+import FlyingCartAnimation from './components/FlyingCartAnimation';
+
 function App() {
   return (
     <AuthProvider>
       <Router>
-        <div className="min-h-screen bg-gray-50 text-gray-900 font-sans">
+        <div className="min-h-screen bg-gray-50 text-gray-900 font-sans relative overflow-hidden">
           <Navbar />
           <CartSidebar />
           <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             <Routes>
-              {/* Trang chủ */}
               <Route path="/" element={<Home />} />
-              
-              {/* Trang thanh toán */}
-              <Route 
-                path="/checkout" 
-                element={
-                  <ProtectedRoute>
-                    <Checkout />
-                  </ProtectedRoute>
-                } 
-              />
-	      <Route 
-                path="/my-orders" 
-                element={
-                  <ProtectedRoute>
-                    <MyOrders />
-                  </ProtectedRoute>
-                } 
-              />
-              {/* Trang Admin */}
-              <Route 
-                path="/admin" 
-                element={
-                  <ProtectedRoute requireAdmin={true}>
-                    <AdminDashboard />
-                  </ProtectedRoute>
-                } 
-              />
+              <Route path="/checkout" element={<ProtectedRoute><Checkout /></ProtectedRoute>} />
+              <Route path="/my-orders" element={<ProtectedRoute><MyOrders /></ProtectedRoute>} />
+              <Route path="/admin" element={<ProtectedRoute requireAdmin={true}><AdminDashboard /></ProtectedRoute>} />
             </Routes>
           </main>
-          {/* 2. GỌI COMPONENT NÚT HỖ TRỢ */}
+          
           <FloatingSupport />
 
-          {/* 3. CẤU HÌNH LẠI TOASTER (Giao diện Premium) */}
+          {/* 2. NHÚNG VÀO ĐÂY ĐỂ NÓ LUÔN ĐƯỢC RENDER */}
+          <FlyingCartAnimation />
+
           <Toaster 
             position="top-center"
             toastOptions={{
@@ -66,12 +46,8 @@ function App() {
                 WebkitBackdropFilter: 'blur(12px)',
                 padding: '16px 24px',
               },
-              success: {
-                iconTheme: { primary: '#22c55e', secondary: '#fff' },
-              },
-              error: {
-                iconTheme: { primary: '#ef4444', secondary: '#fff' },
-              },
+              success: { iconTheme: { primary: '#22c55e', secondary: '#fff' } },
+              error: { iconTheme: { primary: '#ef4444', secondary: '#fff' } },
             }} 
           />
         </div>

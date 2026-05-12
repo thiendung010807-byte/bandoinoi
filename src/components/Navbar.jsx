@@ -22,7 +22,6 @@ export default function Navbar() {
 
           {/* Right Actions */}
           <div className="flex items-center gap-1 sm:gap-3 shrink-0">
-            {/* Admin Button - ĐÃ SỬA: Thêm "hidden sm:flex" để ẩn trên mobile */}
             {isAdmin && (
               <Link 
                 to="/admin" 
@@ -34,9 +33,10 @@ export default function Navbar() {
               </Link>
             )}
 
-            {/* Cart Toggle - Chỉ hiện khi đã đăng nhập */}
+            {/* ĐÃ CẬP NHẬT: GẮN ID ĐỂ LÀM ĐIỂM ĐẾN CỦA BÓNG BAY */}
             {currentUser && (
               <button 
+                id="global-cart-icon" 
                 onClick={toggleCart}
                 className="relative p-2 text-gray-600 hover:text-green-600 transition-colors rounded-full active:bg-gray-100"
               >
@@ -49,42 +49,24 @@ export default function Navbar() {
               </button>
             )}
 
-            {/* Phân cách nhẹ */}
             <div className="w-px h-6 bg-gray-200 mx-0.5 sm:mx-1"></div>
 
             {/* Auth Buttons */}
             {currentUser ? (
               <div className="flex items-center gap-1 sm:gap-3">
-                {/* NÚT XEM ĐƠN HÀNG - Vẫn giữ nguyên hiện trên mobile */}
-                <Link 
-                  to="/my-orders" 
-                  className="text-gray-500 hover:text-green-600 transition-colors p-2 flex items-center gap-1 rounded-full active:bg-gray-100" 
-                  title="Đơn hàng của tôi"
-                >
+                <Link to="/my-orders" className="text-gray-500 hover:text-green-600 transition-colors p-2 flex items-center gap-1 rounded-full active:bg-gray-100" title="Đơn hàng của tôi">
                   <ClipboardList className="w-5 h-5 sm:w-6 h-6" />
                   <span className="hidden lg:block text-sm font-medium">Đơn hàng</span>
                 </Link>
 
-                <img 
-                  src={currentUser.photoURL} 
-                  alt="avatar" 
-                  className="w-8 h-8 rounded-full border border-gray-200 shrink-0 hidden xs:block" 
-                  title={currentUser.displayName} 
-                />
+                <img src={currentUser.photoURL} alt="avatar" className="w-8 h-8 rounded-full border border-gray-200 shrink-0 hidden xs:block" title={currentUser.displayName} />
 
-                <button 
-                  onClick={logout} 
-                  className="p-2 text-gray-500 hover:text-red-600 rounded-full active:bg-red-50 transition-colors" 
-                  title="Đăng xuất"
-                >
+                <button onClick={logout} className="p-2 text-gray-500 hover:text-red-600 rounded-full active:bg-red-50 transition-colors" title="Đăng xuất">
                   <LogOut className="w-5 h-5" />
                 </button>
               </div>
             ) : (
-              <button 
-                onClick={loginWithGoogle}
-                className="bg-green-600 hover:bg-green-700 text-white px-3 py-2 sm:px-4 sm:py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-1.5 active:scale-95 shadow-sm"
-              >
+              <button onClick={loginWithGoogle} className="bg-green-600 hover:bg-green-700 text-white px-3 py-2 sm:px-4 sm:py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-1.5 active:scale-95 shadow-sm">
                 <LogIn className="w-4 h-4 shrink-0" />
                 <span className="hidden xs:block">Đăng nhập</span>
               </button>

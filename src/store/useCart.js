@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import toast from 'react-hot-toast';
 
 export const useCart = create(
   persist(
@@ -8,15 +7,21 @@ export const useCart = create(
       items: [],
       isCartOpen: false,
 
+      // ==========================================
+      // STATE CHO HIỆU ỨNG VẬT THỂ BAY
+      // ==========================================
+      flyingItems: [],
+      addFlyingItem: (item) => set((state) => ({ flyingItems: [...state.flyingItems, item] })),
+      removeFlyingItem: (id) => set((state) => ({ flyingItems: state.flyingItems.filter(i => i.id !== id) })),
+
       // UI Actions
       toggleCart: () => set({ isCartOpen: !get().isCartOpen }),
       openCart: () => set({ isCartOpen: true }),
       closeCart: () => set({ isCartOpen: false }),
 
-      // Cart Actions
-      addItem: (product, variant = null) => {
+      // Cart Actions (Đã sửa lại để nhận số lượng và không tự mở giỏ)
+      addItem: (product, quantity = 1, variant = null) => {
         set((state) => {
-          // Tạo ID duy nhất cho item dựa trên ID sản phẩm + Tên variant
           const cartItemId = variant ? `${product.id}-${variant}` : product.id;
           const existingItem = state.items.find(item => item.cartItemId === cartItemId);
 
@@ -24,14 +29,14 @@ export const useCart = create(
             return {
               items: state.items.map(item =>
                 item.cartItemId === cartItemId
-                  ? { ...item, quantity: item.quantity + 1 }
+                  ? { ...item, quantity: item.quantity + quantity } // Cộng dồn số lượng
                   : item
               )
             };
           }
 
           return {
-            items: [...state.items, { ...product, variant, quantity: 1, cartItemId }]
+            items: [...state.items, { ...product, variant, quantity, cartItemId }]
           };
         });
       },
@@ -56,7 +61,6 @@ export const useCart = create(
 
       clearCart: () => set({ items: [] }),
 
-      // Tính tổng tiền
       getTotalPrice: () => {
         return get().items.reduce((total, item) => total + (item.price * item.quantity), 0);
       },
@@ -66,7 +70,9 @@ export const useCart = create(
       }
     }),
     {
-      name: 'mhx-cart-storage', // Tên key trong localStorage
+      name: 'mhx-cart-storage',
+      // CHỈ LƯU ITEMS VÀO LOCALSTORAGE, BỎ QUA FLYING ITEMS VÀ TRẠNG THÁI MỞ GIỎ
+      partialize: (state) => ({ items: state.items }), 
     }
   )
 );
