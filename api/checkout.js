@@ -112,20 +112,21 @@ export default async function handler(req, res) {
       };
 
       console.log("====== BẮT ĐẦU GỬI SANG GOOGLE SHEET ======");
-      console.log("Dữ liệu gửi đi:", JSON.stringify(sheetData));
       
-      // Gọi fetch sang Sheet ngầm (Không dùng await để khách hàng không phải chờ)
-      fetch(`${SHEET_URL}?t=${Date.now()}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(sheetData),
-        redirect: 'follow'
-      })
-      .then(async (res) => {
-        const text = await res.text();
+      try {
+        // BẮT BUỘC THÊM 'await' VÀ BỎ '.then().catch()' ĐI
+        const resSheet = await fetch(`${SHEET_URL}?t=${Date.now()}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(sheetData),
+          redirect: 'follow'
+        });
+        
+        const text = await resSheet.text();
         console.log("👉 PHẢN HỒI TỪ GOOGLE SHEET:", text);
-      })
-      .catch(err => console.error("❌ LỖI GỌI SHEET:", err));
+      } catch (err) {
+        console.error("❌ LỖI GỌI SHEET:", err);
+      }
     }
 
     // 5. TRẢ KẾT QUẢ THÀNH CÔNG VỀ FRONTEND

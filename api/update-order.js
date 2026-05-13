@@ -69,19 +69,27 @@ export default async function handler(req, res) {
     const SECRET_TOKEN = process.env.VITE_SHEET_SECRET_TOKEN;
 
     if (SHEET_URL) {
-      // Dùng fetch ngầm, không dùng await để tránh làm chậm response trả về cho khách
-      fetch(`${SHEET_URL}?t=${Date.now()}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({
-          token: SECRET_TOKEN,
-          action: "UPDATE_STATUS",
-          orderId: orderId,
-          status: newStatus
-        })
-      }).catch(err => console.error("Lỗi đồng bộ Sheet Update:", err));
+      try {
+        // ĐÃ THÊM: Bắt buộc phải có chữ 'await' ở đây để Vercel không rút phích cắm sớm
+        // ĐÃ THÊM: redirect: 'follow' để đối phó với việc Google Sheet luôn chuyển hướng link
+        await fetch(`${SHEET_URL}?t=${Date.now()}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            token: SECRET_TOKEN,
+            action: "UPDATE_STATUS",
+            orderId: orderId,
+            status: newStatus
+          }),
+          redirect: 'follow' 
+        });
+        console.log("Cập nhật Google Sheet thành công!");
+      } catch (err) {
+        console.error("Lỗi đồng bộ Sheet Update:", err);
+      }
     }
 
+    // Lệnh này chỉ chạy SAU KHI đã gửi xong lên Sheet
     return res.status(200).json({ success: true, message: 'Cập nhật trạng thái thành công!' });
 
   } catch (error) {
