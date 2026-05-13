@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../config/firebase';
-import { collection, query, orderBy, onSnapshot, doc, updateDoc, addDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { 
+  collection, query, orderBy, onSnapshot, doc, 
+  updateDoc, addDoc, deleteDoc, serverTimestamp 
+} from 'firebase/firestore';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { 
@@ -16,13 +19,10 @@ export default function AdminDashboard() {
   const [ctvs, setCtvs] = useState([]); 
   const [loading, setLoading] = useState(true);
   
-  // STATE LOADING SCREEN ĐỒNG BỘ SHEET
   const [isSyncing, setIsSyncing] = useState(false);
-
   const [filter, setFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // STATE SẢN PHẨM
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [productForm, setProductForm] = useState({ 
@@ -30,70 +30,79 @@ export default function AdminDashboard() {
     variantsList: [] 
   });
 
-  // STATE CỘNG TÁC VIÊN
   const [newCtvEmail, setNewCtvEmail] = useState('');
   const [newCtvName, setNewCtvName] = useState(''); 
   const [editingCtvId, setEditingCtvId] = useState(null);
   const [editCtvName, setEditCtvName] = useState('');
 
-  // ==========================================
-  // DÁN LINK GOOGLE SHEET API VÀO ĐÂY
-  // ==========================================
-  const GOOGLE_SHEET_API_URL = "https://script.google.com/macros/s/AKfycbxQ9tjJ2odLUzyhWYNC2cMT-i-pppEwYfbHa-F16o4o7EAhRGA51B_JH4X5ZYXvyK-9/exec";
-  const GOOGLE_SHEET_VIEW_URL = "https://docs.google.com/spreadsheets/d/1-CGudmwK19r_0d6GXnldiDq9ft15RMA079GsHggP7mo/edit?usp=sharing";
+  // Link xem Google Sheet (Link View công khai hoặc nội bộ)
+  const GOOGLE_SHEET_VIEW_URL = import.meta.env.VITE_GOOGLE_SHEET_VIEW_URL || "#";
 
   useEffect(() => {
+    // Lắng nghe đơn hàng thời gian thực
     const qOrders = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
-    const unsubOrders = onSnapshot(qOrders, (snapshot) => setOrders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+    const unsubOrders = onSnapshot(qOrders, (snapshot) => {
+      setOrders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
 
+    // Lắng nghe sản phẩm
     const unsubProducts = onSnapshot(collection(db, 'products'), (snapshot) => {
       setProducts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setLoading(false);
     });
 
-    const unsubCtvs = onSnapshot(collection(db, 'ctvs'), (snapshot) => setCtvs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))));
+    // Lắng nghe CTV
+    const unsubCtvs = onSnapshot(collection(db, 'ctvs'), (snapshot) => {
+      setCtvs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
 
     return () => { unsubOrders(); unsubProducts(); unsubCtvs(); };
   }, []);
 
   // ==========================================
-  // CẬP NHẬT TRẠNG THÁI + LOADING SCREEN
+  // XỬ LÝ CẬP NHẬT TRẠNG THÁI QUA BACKEND (api/update-order.js)
   // ==========================================
   const handleUpdateStatus = async (order, newStatus) => {
-    setIsSyncing(true); // BẬT MÀN HÌNH LOADING
+    let reason = order.cancelReason || '';
+    
+    if (newStatus === 'cancelled' && order.status !== 'cancelled') {
+      const input = window.prompt("Vui lòng nhập lý do hủy đơn (VD: Hết món, khách bom...):", "");
+      if (input === null) return; 
+      reason = input.trim() || 'Admin hủy đơn';
+    }
+
+    setIsSyncing(true);
     try {
-      // 1. Cập nhật Firebase
-      await updateDoc(doc(db, 'orders', order.id), { 
-        status: newStatus, 
-        updatedAt: serverTimestamp() 
+      // Gọi API Backend trên Vercel để cập nhật Firebase (Admin SDK) và Sheet bí mật
+      const response = await fetch('/api/update-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId: order.orderId || order.id,
+          documentId: order.id, 
+          newStatus: newStatus,
+          cancelReason: reason,
+          isAdmin: true 
+        })
       });
 
-      // 2. Cập nhật Google Sheet
-      if (GOOGLE_SHEET_API_URL && GOOGLE_SHEET_API_URL.startsWith("http")) {
-        const url = `${GOOGLE_SHEET_API_URL}?t=${Date.now()}`;
-        await fetch(url, {
-          method: "POST", 
-          mode: "no-cors", 
-          cache: "no-store",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify({ 
-            action: "UPDATE_STATUS", 
-            orderId: String(order.orderId || order.id), 
-            status: newStatus 
-          })
-        });
+      const result = await response.json();
+      
+      if (result.success) {
+        toast.success('Cập nhật trạng thái thành công!');
+      } else {
+        toast.error(result.message || 'Lỗi cập nhật đơn hàng!');
       }
-      toast.success('Đồng bộ trạng thái thành công!');
     } catch (error) {
       console.error(error);
-      toast.error('Lỗi khi đồng bộ dữ liệu!');
+      toast.error('Mất kết nối với máy chủ Backend!');
     } finally {
-      setIsSyncing(false); // TẮT MÀN HÌNH LOADING
+      setIsSyncing(false); 
     }
   };
 
   // ==========================================
-  // LOGIC CỘNG TÁC VIÊN
+  // QUẢN LÝ CỘNG TÁC VIÊN
   // ==========================================
   const handleAddCTV = async (e) => {
     e.preventDefault();
@@ -104,13 +113,9 @@ export default function AdminDashboard() {
         name: newCtvName.trim(), 
         createdAt: serverTimestamp() 
       });
-      setNewCtvEmail('');
-      setNewCtvName('');
+      setNewCtvEmail(''); setNewCtvName('');
       toast.success('Đã thêm CTV mới!');
-    } catch (error) { 
-      console.error(error);
-      toast.error('Lỗi thêm CTV! Xem chi tiết trong Console (F12).'); 
-    }
+    } catch (error) { toast.error('Lỗi khi thêm CTV!'); }
   };
 
   const handleSaveEditCTV = async (ctvId) => {
@@ -118,15 +123,16 @@ export default function AdminDashboard() {
     try {
       await updateDoc(doc(db, 'ctvs', ctvId), { name: editCtvName.trim() });
       setEditingCtvId(null);
-      toast.success('Đã cập nhật tên CTV!');
-    } catch (error) { toast.error('Lỗi cập nhật CTV!'); }
+      toast.success('Cập nhật tên CTV thành công!');
+    } catch (error) { toast.error('Lỗi cập nhật!'); }
   };
 
   // ==========================================
-  // LOGIC SẢN PHẨM
+  // QUẢN LÝ SẢN PHẨM & BIẾN THỂ
   // ==========================================
-  const handleAddVariantRow = () => setProductForm(prev => ({...prev, variantsList: [...prev.variantsList, { name: '', image: '' }]}));
+  const handleAddVariantRow = () => setProductForm(prev => ({...prev, variantsList: [...prev.variantsList, { name: '', image: '', price: '' }]}));
   const handleRemoveVariantRow = (index) => setProductForm(prev => ({...prev, variantsList: prev.variantsList.filter((_, i) => i !== index)}));
+  
   const handleVariantChange = (index, field, value) => {
     const newList = [...productForm.variantsList]; 
     newList[index][field] = value;
@@ -135,9 +141,10 @@ export default function AdminDashboard() {
 
   const handleSaveProduct = async (e) => {
     e.preventDefault();
-    if (!productForm.name || !productForm.price) return toast.error('Vui lòng nhập tên và giá!');
+    if (!productForm.name || !productForm.price) return toast.error('Vui lòng nhập tên và giá gốc!');
 
-    const validVariants = productForm.variantsList.filter(v => v.name.trim() !== '' || v.image.trim() !== '');
+    const validVariants = productForm.variantsList.filter(v => v.name.trim() !== '');
+    
     const productData = {
       name: productForm.name, 
       price: Number(productForm.price), 
@@ -147,59 +154,55 @@ export default function AdminDashboard() {
       isCombo: productForm.isCombo, 
       variants: validVariants.map(v => v.name.trim()), 
       variantImages: validVariants.map(v => v.image.trim()), 
+      variantPrices: validVariants.map(v => Number(v.price) || Number(productForm.price)), 
       updatedAt: serverTimestamp()
     };
 
     try {
       if (isEditing) { 
         await updateDoc(doc(db, 'products', editingId), productData); 
-        toast.success('Cập nhật thành công!'); 
+        toast.success('Cập nhật sản phẩm thành công!'); 
       } else { 
         await addDoc(collection(db, 'products'), { ...productData, sold: 0 }); 
-        toast.success('Đã thêm món mới!'); 
+        toast.success('Đã thêm món mới vào Menu!'); 
       }
       resetForm();
-    } catch (error) { toast.error('Lỗi khi lưu!'); }
+    } catch (error) { toast.error('Lỗi khi lưu sản phẩm!'); }
   };
 
   const resetForm = () => {
     setProductForm({ name: '', price: '', description: '', image: '', inStock: true, isCombo: false, variantsList: [] }); 
-    setIsEditing(false); 
-    setEditingId(null);
+    setIsEditing(false); setEditingId(null);
   };
 
-  // BỘ LỌC ĐƠN HÀNG
+  // Bộ lọc tìm kiếm đơn hàng
   const filteredOrders = orders.filter(o => {
     const matchesFilter = filter === 'all' || o.status === filter;
     const searchLower = searchQuery.toLowerCase();
-    const matchesSearch = o.customerName.toLowerCase().includes(searchLower) || 
-                          o.phone.includes(searchLower) || 
-                          o.id.toLowerCase().includes(searchLower) || 
-                          (o.orderId && o.orderId.toLowerCase().includes(searchLower)) || 
-                          (o.referrer && o.referrer.toLowerCase().includes(searchLower));
+    const matchesSearch = 
+      o.customerName?.toLowerCase().includes(searchLower) || 
+      o.phone?.includes(searchLower) || 
+      (o.orderId && o.orderId.toLowerCase().includes(searchLower)) ||
+      (o.referrer && o.referrer.toLowerCase().includes(searchLower));
     return matchesFilter && matchesSearch;
   });
 
-  if (loading) return <div className="text-center py-20 text-green-600 font-bold animate-pulse">Đang tải trung tâm quản trị...</div>;
+  if (loading) return <div className="text-center py-20 text-green-600 font-bold animate-pulse">Đang tải dữ liệu quản trị...</div>;
 
   return (
     <div className="max-w-7xl mx-auto space-y-8 animate-fade-in pb-20 relative">
       
-      {/* ==========================================
-          MÀN HÌNH LOADING KHI ĐANG ĐỒNG BỘ
-          ========================================== */}
+      {/* Overlay khóa màn hình khi đang đồng bộ */}
       <AnimatePresence>
         {isSyncing && (
           <motion.div 
-            initial={{ opacity: 0 }} 
-            animate={{ opacity: 1 }} 
-            exit={{ opacity: 0 }}
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="fixed inset-0 bg-slate-900/60 backdrop-blur-[2px] z-[9999] flex flex-col items-center justify-center text-white"
           >
-            <div className="bg-white p-8 rounded-3xl flex flex-col items-center shadow-2xl">
+            <div className="bg-white p-8 rounded-3xl flex flex-col items-center shadow-2xl text-center">
               <Loader2 className="w-12 h-12 text-green-500 animate-spin mb-4" />
-              <p className="text-slate-800 font-bold text-lg">Đang đồng bộ Sheet...</p>
-              <p className="text-slate-400 text-sm mt-1">Vui lòng không tắt trình duyệt</p>
+              <p className="text-slate-800 font-bold text-lg">Đang xử lý Backend...</p>
+              <p className="text-slate-500 text-sm mt-1">Vui lòng giữ kết nối internet</p>
             </div>
           </motion.div>
         )}
@@ -208,18 +211,22 @@ export default function AdminDashboard() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 border-b border-slate-200 pb-6 px-4 sm:px-0">
         <div>
           <h1 className="text-3xl font-heading font-extrabold text-slate-900 tracking-tight">Admin Dashboard</h1>
-          <p className="text-slate-500 font-medium mt-1">Quản lý tổng quan chiến dịch gây quỹ</p>
+          <p className="text-slate-500 font-medium mt-1">Hệ thống quản trị chiến dịch Mùa Hè Xanh</p>
         </div>
       </div>
 
+      {/* Thanh điều hướng Tab */}
       <div className="flex gap-2 p-1 bg-slate-200/50 rounded-2xl w-fit mx-4 sm:mx-0 overflow-x-auto max-w-full custom-scrollbar">
         {[
           { id: 'overview', icon: LayoutDashboard, label: 'Tổng quan' },
           { id: 'orders', icon: Package, label: 'Đơn hàng' },
           { id: 'products', icon: ShoppingBag, label: 'Sản phẩm' },
-          { id: 'ctv', icon: Users, label: 'Cộng tác viên' }
+          { id: 'ctv', icon: Users, label: 'CTV' }
         ].map(tab => (
-          <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex items-center gap-2 px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl font-bold transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white text-green-600 shadow-sm' : 'text-slate-600 hover:bg-white/50'}`}>
+          <button 
+            key={tab.id} onClick={() => setActiveTab(tab.id)} 
+            className={`flex items-center gap-2 px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl font-bold transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white text-green-600 shadow-sm' : 'text-slate-600 hover:bg-white/50'}`}
+          >
             <tab.icon className="w-5 h-5" /> {tab.label}
           </button>
         ))}
@@ -227,30 +234,42 @@ export default function AdminDashboard() {
 
       <AnimatePresence mode="wait">
         
-        {/* ==================== TAB TỔNG QUAN ==================== */}
+        {/* --- TAB TỔNG QUAN --- */}
         {activeTab === 'overview' && (
           <motion.div key="overview" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-6 px-4 sm:px-0">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-5"><div className="p-4 bg-green-50 text-green-600 rounded-2xl"><DollarSign className="w-8 h-8" /></div><div><p className="text-slate-500 text-sm font-semibold mb-1">Doanh thu thực</p><h3 className="text-xl font-extrabold text-slate-900">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(orders.filter(o => o.status === 'done').reduce((a, b) => a + b.total, 0))}</h3></div></div>
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-5"><div className="p-4 bg-blue-50 text-blue-600 rounded-2xl"><Package className="w-8 h-8" /></div><div><p className="text-slate-500 text-sm font-semibold mb-1">Tổng đơn</p><h3 className="text-2xl font-extrabold text-slate-900">{orders.length}</h3></div></div>
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-5"><div className="p-4 bg-orange-50 text-orange-600 rounded-2xl"><Clock className="w-8 h-8" /></div><div><p className="text-slate-500 text-sm font-semibold mb-1">Chờ xác nhận</p><h3 className="text-2xl font-extrabold text-slate-900">{orders.filter(o => o.status === 'pending').length}</h3></div></div>
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-5"><div className="p-4 bg-red-50 text-red-600 rounded-2xl"><TrendingUp className="w-8 h-8" /></div><div><p className="text-slate-500 text-sm font-semibold mb-1">Đơn hủy</p><h3 className="text-2xl font-extrabold text-slate-900">{orders.filter(o => o.status === 'cancelled').length}</h3></div></div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-5">
+                <div className="p-4 bg-green-50 text-green-600 rounded-2xl"><DollarSign className="w-8 h-8" /></div>
+                <div><p className="text-slate-500 text-sm font-semibold mb-1">Doanh thu thực</p><h3 className="text-xl font-extrabold text-slate-900">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(orders.filter(o => o.status === 'done').reduce((a, b) => a + (b.total || 0), 0))}</h3></div>
+              </div>
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-5">
+                <div className="p-4 bg-blue-50 text-blue-600 rounded-2xl"><Package className="w-8 h-8" /></div>
+                <div><p className="text-slate-500 text-sm font-semibold mb-1">Tổng đơn</p><h3 className="text-2xl font-extrabold text-slate-900">{orders.length}</h3></div>
+              </div>
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-5">
+                <div className="p-4 bg-orange-50 text-orange-600 rounded-2xl"><Clock className="w-8 h-8" /></div>
+                <div><p className="text-slate-500 text-sm font-semibold mb-1">Chờ xác nhận</p><h3 className="text-2xl font-extrabold text-slate-900">{orders.filter(o => o.status === 'pending').length}</h3></div>
+              </div>
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-5">
+                <div className="p-4 bg-red-50 text-red-600 rounded-2xl"><TrendingUp className="w-8 h-8" /></div>
+                <div><p className="text-slate-500 text-sm font-semibold mb-1">Đơn hủy</p><h3 className="text-2xl font-extrabold text-slate-900">{orders.filter(o => o.status === 'cancelled').length}</h3></div>
+              </div>
             </div>
           </motion.div>
         )}
 
-        {/* ==================== TAB CTV ==================== */}
+        {/* --- TAB CTV --- */}
         {activeTab === 'ctv' && (
           <motion.div key="ctv" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-6 px-4 sm:px-0">
             <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
               <div>
                 <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Award className="w-6 h-6 text-orange-500" /> Quản lý Cộng Tác Viên</h2>
-                <p className="text-sm text-slate-500 mt-1">Nhập Email (để tự nhận diện) và Họ tên (để gợi ý cho khách).</p>
+                <p className="text-sm text-slate-500 mt-1">Gán Email Google của CTV để hệ thống tự nhận diện.</p>
               </div>
               <form onSubmit={handleAddCTV} className="flex flex-col sm:flex-row gap-2 w-full xl:w-auto">
                 <input type="email" value={newCtvEmail} onChange={(e) => setNewCtvEmail(e.target.value)} placeholder="Email Google của CTV..." className="w-full sm:w-56 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-orange-500 text-sm" required />
-                <input type="text" value={newCtvName} onChange={(e) => setNewCtvName(e.target.value)} placeholder="Họ và Tên (Gợi ý cho khách)..." className="w-full sm:w-56 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-orange-500 text-sm" required />
-                <button type="submit" className="px-5 py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl shadow-md transition-all whitespace-nowrap">Thêm CTV</button>
+                <input type="text" value={newCtvName} onChange={(e) => setNewCtvName(e.target.value)} placeholder="Họ và Tên CTV..." className="w-full sm:w-56 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-orange-500 text-sm" required />
+                <button type="submit" className="px-5 py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl shadow-md transition-all">Thêm</button>
               </form>
             </div>
 
@@ -258,49 +277,41 @@ export default function AdminDashboard() {
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse min-w-[800px]">
                   <thead>
-                    <tr className="bg-slate-50 border-b border-slate-100 text-xs text-slate-500 uppercase tracking-wider font-bold">
-                      <th className="p-5">Thông tin CTV</th><th className="p-5 text-center">Đơn chờ / Giao</th><th className="p-5 text-center">Đơn thành công</th><th className="p-5 text-right">Doanh thu mang lại</th><th className="p-5 text-center">Hành động</th>
+                    <tr className="bg-slate-50 border-b border-slate-100 text-xs text-slate-500 uppercase font-bold">
+                      <th className="p-5">Thông tin CTV</th><th className="p-5 text-center">Đơn chờ/giao</th><th className="p-5 text-center">Đơn thành công</th><th className="p-5 text-right">Doanh thu</th><th className="p-5 text-center">Hành động</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {ctvs.length === 0 ? (<tr><td colSpan="5" className="p-10 text-center text-slate-400">Chưa có CTV nào.</td></tr>) : (
-                      ctvs.map(ctv => {
-                        const ctvOrders = orders.filter(o => o.referrer && o.referrer.toLowerCase() === ctv.name.toLowerCase());
-                        const doneOrders = ctvOrders.filter(o => o.status === 'done');
-                        const pendingOrders = ctvOrders.filter(o => o.status !== 'done' && o.status !== 'cancelled');
-                        const revenue = doneOrders.reduce((sum, o) => sum + o.total, 0);
-
-                        return (
-                          <tr key={ctv.id} className="hover:bg-slate-50/50 transition-colors">
-                            <td className="p-5">
-                              <p className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                                <span className="w-2 h-2 rounded-full bg-green-500"></span> {ctv.email}
-                              </p>
-                              {editingCtvId === ctv.id ? (
-                                <div className="flex items-center gap-2 mt-2">
-                                  <input type="text" value={editCtvName} onChange={(e) => setEditCtvName(e.target.value)} className="p-1.5 px-3 border border-slate-300 rounded-lg text-sm w-48 outline-none focus:border-orange-500" placeholder="Tên mới..." />
-                                  <button onClick={() => handleSaveEditCTV(ctv.id)} className="p-1.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200"><Check className="w-4 h-4"/></button>
-                                  <button onClick={() => setEditingCtvId(null)} className="p-1.5 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200"><X className="w-4 h-4"/></button>
-                                </div>
-                              ) : (
-                                <p className="text-orange-600 font-bold text-sm mt-1 flex items-center gap-1">
-                                  Họ Tên hiển thị: <span className="bg-orange-50 border border-orange-100 px-2 py-0.5 rounded-md">{ctv.name}</span>
-                                </p>
-                              )}
-                            </td>
-                            <td className="p-5 text-center font-medium text-slate-600">{pendingOrders.length}</td>
-                            <td className="p-5 text-center font-bold text-green-600">{doneOrders.length}</td>
-                            <td className="p-5 text-right font-extrabold text-slate-900">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(revenue)}</td>
-                            <td className="p-5 text-center">
-                              <div className="flex justify-center gap-2">
-                                <button onClick={() => { setEditingCtvId(ctv.id); setEditCtvName(ctv.name); }} className="p-2 text-slate-400 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 rounded-lg transition-colors"><Edit className="w-4 h-4"/></button>
-                                <button onClick={() => { if(window.confirm('Xóa CTV này?')) deleteDoc(doc(db, 'ctvs', ctv.id)) }} className="p-2 text-slate-400 hover:text-red-600 bg-slate-50 hover:bg-red-50 rounded-lg transition-colors"><Trash2 className="w-4 h-4"/></button>
+                    {ctvs.map(ctv => {
+                      const ctvOrders = orders.filter(o => o.referrer && o.referrer.toLowerCase() === ctv.name.toLowerCase());
+                      const doneOrders = ctvOrders.filter(o => o.status === 'done');
+                      const revenue = doneOrders.reduce((sum, o) => sum + (o.total || 0), 0);
+                      return (
+                        <tr key={ctv.id} className="hover:bg-slate-50/50 transition-colors">
+                          <td className="p-5">
+                            <p className="font-bold text-slate-900 text-sm">{ctv.email}</p>
+                            {editingCtvId === ctv.id ? (
+                              <div className="flex items-center gap-2 mt-2">
+                                <input type="text" value={editCtvName} onChange={(e) => setEditCtvName(e.target.value)} className="p-1.5 border rounded-lg text-sm w-40" />
+                                <button onClick={() => handleSaveEditCTV(ctv.id)} className="p-1.5 bg-green-100 text-green-700 rounded-lg"><Check className="w-4 h-4"/></button>
+                                <button onClick={() => setEditingCtvId(null)} className="p-1.5 bg-slate-100 text-slate-600 rounded-lg"><X className="w-4 h-4"/></button>
                               </div>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
+                            ) : (
+                              <p className="text-orange-600 font-bold text-sm">Họ Tên: {ctv.name}</p>
+                            )}
+                          </td>
+                          <td className="p-5 text-center">{ctvOrders.length - doneOrders.length}</td>
+                          <td className="p-5 text-center font-bold text-green-600">{doneOrders.length}</td>
+                          <td className="p-5 text-right font-extrabold">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(revenue)}</td>
+                          <td className="p-5 text-center">
+                            <div className="flex justify-center gap-2">
+                              <button onClick={() => { setEditingCtvId(ctv.id); setEditCtvName(ctv.name); }} className="p-2 text-blue-600 bg-blue-50 rounded-lg"><Edit className="w-4 h-4"/></button>
+                              <button onClick={() => { if(window.confirm('Xóa CTV này?')) deleteDoc(doc(db, 'ctvs', ctv.id)) }} className="p-2 text-red-600 bg-red-50 rounded-lg"><Trash2 className="w-4 h-4"/></button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -308,77 +319,86 @@ export default function AdminDashboard() {
           </motion.div>
         )}
 
-        {/* ==================== TAB ĐƠN HÀNG ==================== */}
+        {/* --- TAB ĐƠN HÀNG --- */}
         {activeTab === 'orders' && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden mx-4 sm:mx-0">
             <div className="p-4 sm:p-6 border-b border-slate-100 bg-slate-50/50 flex flex-col lg:flex-row gap-4 justify-between items-center">
               <div className="relative w-full lg:w-96">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                <input type="text" placeholder="Tìm tên, SĐT, mã đơn, CTV..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-green-500 transition-all shadow-sm text-sm" />
+                <input type="text" placeholder="Tìm tên, SĐT, mã đơn, CTV..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-green-500 transition-all text-sm" />
               </div>
-              <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
-                <div className="relative flex-1 sm:flex-none">
-                  <Filter className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <select value={filter} onChange={(e) => setFilter(e.target.value)} className="w-full pl-10 pr-8 py-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-green-500 appearance-none font-medium text-slate-700 shadow-sm text-sm">
-                    <option value="all">Tất cả trạng thái</option><option value="pending">Chờ xác nhận</option><option value="confirmed">Đã xác nhận</option><option value="shipping">Đang giao</option><option value="done">Hoàn thành</option><option value="cancelled">Đã hủy</option>
-                  </select>
-                </div>
-                <a href={GOOGLE_SHEET_VIEW_URL} target="_blank" rel="noreferrer" className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl transition-all shadow-md">
-                  <ExternalLink className="w-5 h-5" /> <span className="text-sm">Mở File Live</span>
+              <div className="flex gap-3 w-full lg:w-auto">
+                <select value={filter} onChange={(e) => setFilter(e.target.value)} className="flex-1 lg:w-48 p-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-green-500 font-medium text-sm">
+                  <option value="all">Tất cả trạng thái</option>
+                  <option value="pending">Chờ xác nhận</option>
+                  <option value="confirmed">Đã xác nhận</option>
+                  <option value="shipping">Đang giao</option>
+                  <option value="done">Hoàn thành</option>
+                  <option value="cancelled">Đã hủy</option>
+                </select>
+                <a href={GOOGLE_SHEET_VIEW_URL} target="_blank" rel="noreferrer" className="p-3 bg-green-600 text-white rounded-xl flex items-center gap-2 hover:bg-green-700 transition-all">
+                  <ExternalLink className="w-5 h-5" /> <span className="hidden sm:inline">Mở Sheet</span>
                 </a>
               </div>
             </div>
             
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse min-w-[800px]">
-                <thead><tr className="bg-white border-b border-slate-100 text-xs text-slate-400 uppercase tracking-wider font-bold"><th className="p-5">Khách hàng</th><th className="p-5">Chi tiết đơn</th><th className="p-5">Thanh toán</th><th className="p-5">Trạng thái</th></tr></thead>
+              <table className="w-full text-left border-collapse min-w-[900px]">
+                <thead><tr className="bg-white border-b text-xs text-slate-400 uppercase font-bold"><th className="p-5">Khách hàng</th><th className="p-5">Chi tiết đơn</th><th className="p-5">Thanh toán</th><th className="p-5">Trạng thái</th></tr></thead>
                 <tbody className="divide-y divide-slate-50">
-                  {filteredOrders.length === 0 ? (<tr><td colSpan="4" className="p-10 text-center text-slate-400 font-medium">Không tìm thấy đơn hàng nào phù hợp.</td></tr>) : (
-                    filteredOrders.map(order => (
-                      <tr key={order.id} className="hover:bg-slate-50/50 transition-colors group">
-                        <td className="p-5 align-top">
-                          <p className="font-bold text-slate-900 text-base">{order.customerName}</p>
-                          <p className="text-[11px] font-bold text-blue-600 bg-blue-50 w-fit px-2 py-0.5 rounded-md mt-1 border border-blue-100">{order.orderId || order.id}</p>
-                          <p className="text-slate-500 font-medium text-sm mt-1">{order.phone}</p>
-                          <p className="text-slate-400 text-xs mt-2 max-w-[200px] leading-relaxed">{order.address}</p>
-                        </td>
-                        <td className="p-5 align-top max-w-xs">
-                          <ul className="space-y-1.5 text-sm">{order.items.map((item, idx) => (<li key={idx} className="text-slate-700"><span className="font-bold text-slate-900">{item.quantity}x</span> {item.name} {item.variant && <span className="text-slate-400">({item.variant})</span>}</li>))}</ul>
-                          {order.notes && <p className="mt-3 text-xs text-orange-700 bg-orange-50 p-2 rounded-lg border border-orange-100"><span className="font-bold">Ghi chú:</span> {order.notes}</p>}
-                          {order.referrer && <p className="mt-2 text-xs text-orange-600 bg-orange-100/50 p-2 rounded-lg font-semibold flex items-center gap-1"><Users className="w-3 h-3"/> CTV: {order.referrer}</p>}
-                        </td>
-                        <td className="p-5 align-top">
-                          <p className="font-bold text-green-600 text-lg">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(order.total)}</p>
-                          <div className="mt-2 flex flex-col gap-1.5 items-start">
-                             <span className={`inline-block text-[10px] font-bold px-2 py-1 rounded-md uppercase tracking-wider ${order.paymentMethod === 'COD' ? 'bg-slate-100 text-slate-600' : 'bg-blue-100 text-blue-600'}`}>{order.paymentMethod}</span>
-                             <span className={`inline-block text-[10px] font-bold px-2 py-1 rounded-md ${order.shippingFee === 'Miễn phí' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>Ship: {order.shippingFee || 'Chưa rõ'}</span>
-                          </div>
-                          {order.proofLink && <a href={order.proofLink} target="_blank" rel="noreferrer" className="block mt-2 text-xs font-bold text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"><ExternalLink className="w-3 h-3"/> Xem bill CK</a>}
-                        </td>
-                        <td className="p-5 align-top">
-                          {order.status === 'cancelled' ? (
-                            <div><span className="inline-block bg-red-100 text-red-700 text-xs rounded-full px-3 py-1 font-bold">Đã hủy</span>{order.cancelReason && <p className="text-xs text-red-600 mt-2 leading-relaxed max-w-[150px]"><span className="font-bold">Lý do:</span> {order.cancelReason}</p>}</div>
-                          ) : (
-                            <select 
-                              value={order.status} 
-                              disabled={isSyncing} // Khóa select khi đang sync
-                              onChange={(e) => handleUpdateStatus(order, e.target.value)} 
-                              className={`text-sm rounded-xl px-4 py-2 font-bold outline-none cursor-pointer border-2 transition-all appearance-none pr-8 ${isSyncing ? 'opacity-50 cursor-not-allowed' : ''} ${order.status === 'pending' ? 'border-orange-200 bg-orange-50 text-orange-700' : ''} ${order.status === 'done' ? 'border-green-200 bg-green-50 text-green-700' : ''} ${order.status === 'shipping' ? 'border-purple-200 bg-purple-50 text-purple-700' : ''} ${order.status === 'confirmed' ? 'border-blue-200 bg-blue-50 text-blue-700' : ''}`}
-                            >
-                              <option value="pending">Chờ xác nhận</option><option value="confirmed">Đã xác nhận</option><option value="shipping">Đang giao</option><option value="done">Hoàn thành</option>
-                            </select>
-                          )}
-                        </td>
-                      </tr>
-                    ))
-                  )}
+                  {filteredOrders.map(order => (
+                    <tr key={order.id} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="p-5 align-top">
+                        <p className="font-bold text-slate-900">{order.customerName}</p>
+                        <p className="text-[11px] font-bold text-blue-600 bg-blue-50 w-fit px-2 py-0.5 rounded mt-1">{order.orderId || order.id}</p>
+                        <p className="text-slate-500 text-sm mt-1">{order.phone}</p>
+                        <p className="text-slate-400 text-xs mt-2 max-w-[200px]">{order.address}</p>
+                      </td>
+                      <td className="p-5 align-top">
+                        <ul className="space-y-1 text-sm">
+                          {order.items?.map((item, idx) => (
+                            <li key={idx}><span className="font-bold">{item.quantity}x</span> {item.name} {item.variant && `(${item.variant})`}</li>
+                          ))}
+                        </ul>
+                        {order.notes && <p className="mt-2 text-xs text-orange-700 bg-orange-50 p-2 rounded-lg">Lưu ý: {order.notes}</p>}
+                        {order.referrer && <p className="mt-2 text-xs text-blue-600 font-semibold italic">Giới thiệu: {order.referrer}</p>}
+                      </td>
+                      <td className="p-5 align-top">
+                        <p className="font-bold text-green-600 text-lg">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(order.total)}</p>
+                        <span className="text-[10px] font-bold px-2 py-1 rounded bg-slate-100 uppercase">{order.paymentMethod}</span>
+                        {order.proofLink && <a href={order.proofLink} target="_blank" rel="noreferrer" className="block mt-2 text-xs text-blue-600 underline">Xem Bill CK</a>}
+                      </td>
+                      <td className="p-5 align-top">
+                        <select 
+                          value={order.status} 
+                          onChange={(e) => handleUpdateStatus(order, e.target.value)} 
+                          className={`text-sm rounded-xl px-4 py-2 font-bold outline-none border-2 transition-all ${
+                            order.status === 'pending' ? 'border-orange-200 bg-orange-50 text-orange-700' :
+                            order.status === 'done' ? 'border-green-200 bg-green-50 text-green-700' :
+                            order.status === 'shipping' ? 'border-purple-200 bg-purple-50 text-purple-700' :
+                            order.status === 'confirmed' ? 'border-blue-200 bg-blue-50 text-blue-700' :
+                            'border-red-200 bg-red-50 text-red-700'
+                          }`}
+                        >
+                          <option value="pending">Chờ xác nhận</option>
+                          <option value="confirmed">Đã xác nhận</option>
+                          <option value="shipping">Đang giao</option>
+                          <option value="done">Hoàn thành</option>
+                          <option value="cancelled">Hủy đơn</option>
+                        </select>
+                        {order.status === 'cancelled' && order.cancelReason && (
+                          <p className="text-[11px] text-red-500 mt-2 italic">Lý do: {order.cancelReason}</p>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
           </motion.div>
         )}
 
-        {/* ==================== TAB SẢN PHẨM ==================== */}
+        {/* --- TAB SẢN PHẨM --- */}
         {activeTab === 'products' && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="grid grid-cols-1 lg:grid-cols-3 gap-8 px-4 sm:px-0">
             <div className="lg:col-span-1 bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 h-fit sticky top-24">
@@ -387,96 +407,67 @@ export default function AdminDashboard() {
                 {isEditing ? 'Chỉnh sửa món' : 'Thêm món mới'}
               </h2>
               <form onSubmit={handleSaveProduct} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1 ml-1">Tên sản phẩm</label>
-                  <input type="text" value={productForm.name} onChange={e => setProductForm({...productForm, name: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-green-500 outline-none transition-all" placeholder="VD: Bánh tráng nướng" required />
-                </div>
+                <input type="text" value={productForm.name} onChange={e => setProductForm({...productForm, name: e.target.value})} className="w-full p-3 bg-slate-50 border rounded-2xl outline-none" placeholder="Tên sản phẩm..." required />
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1 ml-1">Giá bán (đ)</label>
-                    <input type="number" value={productForm.price} onChange={e => setProductForm({...productForm, price: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-green-500 outline-none" placeholder="20000" required />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1 ml-1">Trạng thái</label>
-                    <label className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-200 cursor-pointer transition-colors hover:border-green-300">
-                      <input type="checkbox" checked={productForm.inStock} onChange={e => setProductForm({...productForm, inStock: e.target.checked})} className="w-5 h-5 text-green-500 rounded focus:ring-green-500 border-slate-300" />
-                      <span className={`text-sm font-bold ${productForm.inStock ? 'text-green-600' : 'text-red-500'}`}>{productForm.inStock ? 'Đang bán' : 'Hết hàng'}</span>
-                    </label>
-                  </div>
+                  <input type="number" value={productForm.price} onChange={e => setProductForm({...productForm, price: e.target.value})} className="w-full p-3 bg-slate-50 border rounded-2xl outline-none" placeholder="Giá gốc (đ)..." required />
+                  <label className="flex items-center gap-2 p-3 bg-slate-50 rounded-2xl border cursor-pointer">
+                    <input type="checkbox" checked={productForm.inStock} onChange={e => setProductForm({...productForm, inStock: e.target.checked})} />
+                    <span className="text-sm font-bold">Còn hàng</span>
+                  </label>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1 ml-1">Mô tả chi tiết</label>
-                  <textarea value={productForm.description} onChange={e => setProductForm({...productForm, description: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-green-500 outline-none min-h-[100px]" placeholder="Nguyên liệu, hương vị..." />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1 ml-1">Link Ảnh chính</label>
-                  <div className="flex gap-2">
-                    <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center shrink-0 border border-slate-200 overflow-hidden">
-                      {productForm.image ? <img src={productForm.image} className="w-full h-full object-cover" /> : <ImageIcon className="w-5 h-5 text-slate-400" />}
-                    </div>
-                    <input type="url" value={productForm.image} onChange={e => setProductForm({...productForm, image: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-green-500 outline-none text-sm" placeholder="https://..." />
-                  </div>
-                </div>
+                <textarea value={productForm.description} onChange={e => setProductForm({...productForm, description: e.target.value})} className="w-full p-3 bg-slate-50 border rounded-2xl outline-none min-h-[80px]" placeholder="Mô tả..." />
+                <input type="url" value={productForm.image} onChange={e => setProductForm({...productForm, image: e.target.value})} className="w-full p-3 bg-slate-50 border rounded-2xl outline-none" placeholder="Link ảnh..." />
+                
+                {/* Khu vực Nhập Phân loại */}
                 <div className="p-4 bg-green-50/50 rounded-2xl border border-green-100 space-y-3">
                   <div className="flex justify-between items-center">
-                    <p className="text-[10px] font-extrabold text-green-700 uppercase tracking-widest">Phân loại / Vị / Màu sắc</p>
-                    <button type="button" onClick={handleAddVariantRow} className="text-xs font-bold text-green-600 hover:text-green-800 bg-green-100 hover:bg-green-200 px-3 py-1.5 rounded-lg flex items-center gap-1 transition-colors"><Plus className="w-3 h-3" /> Thêm loại</button>
+                    <p className="text-xs font-extrabold text-green-700 uppercase">Phân loại / Vị</p>
+                    <button type="button" onClick={handleAddVariantRow} className="text-xs font-bold text-green-600 bg-green-100 px-3 py-1.5 rounded-lg">+ Thêm loại</button>
                   </div>
-                  {productForm.variantsList.length === 0 ? (
-                    <p className="text-xs text-slate-500 text-center py-2 italic">Chưa có phân loại nào.</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {productForm.variantsList.map((item, index) => (
-                        <div key={index} className="flex gap-2 items-start bg-white p-2 rounded-xl border border-green-200/60 shadow-sm relative group">
-                          <div className="w-10 h-10 bg-slate-50 rounded-lg flex items-center justify-center shrink-0 border border-slate-100 overflow-hidden">
-                            {item.image ? <img src={item.image} className="w-full h-full object-cover" /> : <ImageIcon className="w-4 h-4 text-slate-300" />}
-                          </div>
-                          <div className="flex-1 space-y-2">
-                            <input type="text" value={item.name} onChange={e => handleVariantChange(index, 'name', e.target.value)} className="w-full p-2 bg-slate-50 border border-slate-100 rounded-lg outline-none focus:border-green-400 text-sm font-semibold text-slate-700" placeholder="Tên vị..." />
-                            <input type="url" value={item.image} onChange={e => handleVariantChange(index, 'image', e.target.value)} className="w-full p-2 bg-slate-50 border border-slate-100 rounded-lg outline-none focus:border-green-400 text-xs text-slate-600" placeholder="Link ảnh..." />
-                          </div>
-                          <button type="button" onClick={() => handleRemoveVariantRow(index)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors mt-1"><Trash2 className="w-4 h-4" /></button>
-                        </div>
-                      ))}
+                  {productForm.variantsList.map((item, index) => (
+                    <div key={index} className="flex gap-2 items-start bg-white p-3 rounded-xl border border-green-200/60 shadow-sm">
+                      <div className="flex-1 space-y-2">
+                        <input type="text" value={item.name} onChange={e => handleVariantChange(index, 'name', e.target.value)} className="w-full p-2 bg-slate-50 rounded-lg outline-none text-sm font-semibold" placeholder="Tên vị..." />
+                        <input type="number" value={item.price} onChange={e => handleVariantChange(index, 'price', e.target.value)} className="w-full p-2 bg-slate-50 rounded-lg outline-none text-sm" placeholder="Giá riêng (nếu có)..." />
+                      </div>
+                      <button type="button" onClick={() => handleRemoveVariantRow(index)} className="p-2 text-red-400"><Trash2 className="w-4 h-4" /></button>
                     </div>
-                  )}
+                  ))}
                 </div>
-                <label className="flex items-center gap-3 p-3 bg-orange-50 rounded-2xl border border-orange-100 cursor-pointer group mt-2">
-                  <input type="checkbox" checked={productForm.isCombo} onChange={e => setProductForm({...productForm, isCombo: e.target.checked})} className="w-5 h-5 text-orange-500 rounded-lg focus:ring-orange-500 border-orange-300" />
-                  <span className="text-sm font-bold text-orange-800 group-hover:text-orange-600">Đánh dấu là COMBO 🎁</span>
-                </label>
+                
                 <div className="flex gap-2 pt-2">
-                  {isEditing && <button type="button" onClick={resetForm} className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold hover:bg-slate-200 transition-all">Hủy</button>}
-                  <button type="submit" className={`flex-[2] py-4 rounded-2xl font-bold text-white shadow-lg transition-all active:scale-95 flex justify-center items-center gap-2 ${isEditing ? 'bg-blue-500 shadow-blue-500/30' : 'bg-green-500 shadow-green-500/30'}`}>
-                    {isEditing ? 'CẬP NHẬT' : <><Plus className="w-5 h-5"/> THÊM MÓN</>}
+                  {isEditing && <button type="button" onClick={resetForm} className="flex-1 py-4 bg-slate-100 rounded-2xl font-bold">Hủy</button>}
+                  <button type="submit" className={`flex-[2] py-4 rounded-2xl font-bold text-white shadow-lg ${isEditing ? 'bg-blue-500' : 'bg-green-500'}`}>
+                    {isEditing ? 'CẬP NHẬT' : 'THÊM MÓN'}
                   </button>
                 </div>
               </form>
             </div>
 
             <div className="lg:col-span-2 space-y-4">
-              <div className="flex justify-between items-center mb-2"><h2 className="font-bold text-slate-800 text-lg">Menu hiện tại ({products.length})</h2></div>
+              <h2 className="font-bold text-slate-800 text-lg">Menu hiện tại ({products.length})</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {products.map(product => (
-                  <div key={product.id} className="bg-white p-4 rounded-[2rem] shadow-sm border border-slate-100 flex gap-4 group hover:shadow-soft transition-all">
-                    <div className="relative">
-                      <img src={product.image} className="w-24 h-24 rounded-2xl object-cover bg-slate-50" />
-                      {product.isCombo && <span className="absolute -top-2 -left-2 bg-orange-500 text-white text-[8px] font-bold px-2 py-1 rounded-full shadow-md">COMBO</span>}
-                    </div>
+                  <div key={product.id} className="bg-white p-4 rounded-[2rem] shadow-sm border border-slate-100 flex gap-4 group">
+                    <img src={product.image} className="w-20 h-24 rounded-2xl object-cover bg-slate-50" />
                     <div className="flex-1 flex flex-col">
                       <h3 className="font-bold text-slate-800 line-clamp-1">{product.name}</h3>
                       <p className="text-green-600 font-extrabold text-lg">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(product.price)}</p>
-                      <p className="text-xs mt-1">
-                        <span className={`font-bold ${product.inStock !== false ? 'text-green-600' : 'text-red-500'}`}>{product.inStock !== false ? '• Còn hàng' : '• Hết hàng'}</span> 
-                        <span className="text-slate-400 font-medium ml-2">| Đã bán: {product.sold || 0}</span>
+                      <p className="text-xs">
+                        <span className={`font-bold ${product.inStock ? 'text-green-600' : 'text-red-500'}`}>{product.inStock ? '• Còn hàng' : '• Hết hàng'}</span> 
+                        <span className="text-slate-400 ml-2">| Đã bán: {product.sold || 0}</span>
                       </p>
                       <div className="flex gap-2 mt-auto pt-2">
                         <button onClick={() => {
-                            const loadedVariantsList = (product.variants || []).map((v, idx) => ({ name: v, image: (product.variantImages && product.variantImages[idx]) ? product.variantImages[idx] : '' }));
+                            const loadedVariantsList = (product.variants || []).map((v, idx) => ({ 
+                              name: v, 
+                              image: (product.variantImages && product.variantImages[idx]) || '',
+                              price: (product.variantPrices && product.variantPrices[idx]) || product.price
+                            }));
                             setProductForm({ ...product, variantsList: loadedVariantsList });
                             setIsEditing(true); setEditingId(product.id);
-                          }} className="flex-1 bg-slate-50 text-slate-600 hover:bg-blue-50 hover:text-blue-600 text-xs font-bold py-2 rounded-xl transition-all">Sửa</button>
-                        <button onClick={() => { if(window.confirm('Xóa món này?')) deleteDoc(doc(db, 'products', product.id)) }} className="px-3 bg-slate-50 text-slate-400 hover:bg-red-50 hover:text-red-600 rounded-xl transition-all"><Trash2 className="w-4 h-4"/></button>
+                          }} className="flex-1 bg-blue-50 text-blue-600 text-xs font-bold py-2 rounded-xl">Sửa</button>
+                        <button onClick={() => { if(window.confirm('Xóa món này?')) deleteDoc(doc(db, 'products', product.id)) }} className="px-3 bg-red-50 text-red-400 rounded-xl"><Trash2 className="w-4 h-4"/></button>
                       </div>
                     </div>
                   </div>

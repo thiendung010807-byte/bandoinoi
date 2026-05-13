@@ -37,11 +37,53 @@ export default function ProductCardPro({ product }) {
   const allImages = [product.image, ...validVariantImages].filter(Boolean);
   const progressPercent = Math.min((soldCount / (soldCount + 20)) * 100, 95);
 
+  const hasNamedVariants = product.variants && product.variants.filter(v => v.trim() !== '').length > 0;
+
   // ==========================================
-  // HÀM 1: THÊM VÀO GIỎ & TẠO HIỆU ỨNG BAY
+  // HÀM 1: TÍNH CHUỖI HIỂN THỊ GIÁ (MIN - MAX)
+  // ==========================================
+  const formatPrice = (price) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(price);
+
+  const getPriceDisplay = () => {
+    if (!hasNamedVariants || !product.variantPrices || product.variantPrices.length === 0) {
+      return formatPrice(product.price);
+    }
+
+    // Lọc ra danh sách giá hợp lệ của các phân loại
+    const validPrices = product.variants
+      .map((v, idx) => v.trim() !== '' ? (Number(product.variantPrices[idx]) || Number(product.price)) : null)
+      .filter(p => p !== null);
+
+    if (validPrices.length === 0) return formatPrice(product.price);
+
+    const minPrice = Math.min(...validPrices);
+    const maxPrice = Math.max(...validPrices);
+
+    if (minPrice === maxPrice) return formatPrice(minPrice);
+    
+    // Nếu có khoảng giá, hiển thị kiểu "20.000 - 25.000 đ"
+    const minStr = new Intl.NumberFormat('vi-VN').format(minPrice);
+    return `${minStr} - ${formatPrice(maxPrice)}`;
+  };
+
+  // ==========================================
+  // HÀM 2: LẤY GIÁ CỦA VỊ ĐANG ĐƯỢC CHỌN THỰC TẾ
+  // ==========================================
+  const getCurrentPrice = () => {
+    if (!selectedVariant || !product.variants) return Number(product.price); 
+    const idx = product.variants.indexOf(selectedVariant);
+    if (idx !== -1 && product.variantPrices && product.variantPrices[idx]) {
+      return Number(product.variantPrices[idx]); 
+    }
+    return Number(product.price); 
+  };
+
+  const currentPrice = getCurrentPrice();
+
+  // ==========================================
+  // HÀM 3: THÊM VÀO GIỎ & TẠO HIỆU ỨNG BAY
   // ==========================================
   const handleAdd = (e) => {
-    // ĐÃ FIX: Thêm một lớp bảo vệ ở đây nữa cho chắc chắn
     if (isOutOfStock) {
       toast.error('Sản phẩm này tạm thời hết hàng!');
       return;
@@ -53,19 +95,16 @@ export default function ProductCardPro({ product }) {
       return; 
     }
 
-    const hasNamedVariants = product.variants && product.variants.filter(v => v.trim() !== '').length > 0;
     if (hasNamedVariants && !selectedVariant) {
       return toast.error('Vui lòng chọn phân loại hàng!');
     }
 
-    // Lấy tọa độ nút bấm và giỏ hàng
     const buttonRect = e.currentTarget.getBoundingClientRect();
     const cartIcon = document.getElementById('global-cart-icon');
     const cartRect = cartIcon 
       ? cartIcon.getBoundingClientRect() 
       : { top: 20, left: window.innerWidth - 50, width: 40, height: 40 };
 
-    // Tạo vật thể bay (Trừ đi 32px vì size ảnh bay là 64x64)
     const flyingItem = {
       id: Date.now(),
       image: currentImage || product.image,
@@ -75,25 +114,24 @@ export default function ProductCardPro({ product }) {
       endY: cartRect.top + cartRect.height / 2 - 32,
     };
 
-    // Gọi lệnh bay
     if (addFlyingItem) {
       addFlyingItem(flyingItem);
     }
 
-    // Thêm vào giỏ hàng
-    addItem(product, quantity, selectedVariant);
+    // Đóng gói sản phẩm với Giá Tiền của vị vừa chọn
+    const productToAdd = { ...product, price: currentPrice };
+    addItem(productToAdd, quantity, selectedVariant);
 
     setIsModalOpen(false);
     toast.success(`Đã thêm ${quantity} sản phẩm vào giỏ!`);
   };
 
   // ==========================================
-  // HÀM 2: XỬ LÝ CLICK NHANH Ở NGOÀI CARD
+  // HÀM 4: CLICK NHANH (MUA NGAY TRÊN CARD)
   // ==========================================
   const handleQuickAdd = (e) => {
-    e.stopPropagation(); // Chặn lan truyền click lên thẻ cha (ngăn mở Modal)
+    e.stopPropagation(); 
     
-    // ĐÃ FIX: Chặn đứng ngay lập tức nếu sản phẩm hết hàng
     if (isOutOfStock) {
       toast.error('Sản phẩm này tạm thời hết hàng!');
       return;
@@ -103,14 +141,10 @@ export default function ProductCardPro({ product }) {
       toast.error('Vui lòng đăng nhập để mua hàng!');
       return;
     }
-
-    const hasNamedVariants = product.variants && product.variants.filter(v => v.trim() !== '').length > 0;
     
     if (hasNamedVariants) {
-      // Nếu món CÓ PHÂN LOẠI -> Phải mở Modal để khách chọn vị
       setIsModalOpen(true);
     } else {
-      // Nếu món KHÔNG CÓ PHÂN LOẠI -> Bắn thẳng vào giỏ
       handleAdd(e);
     }
   };
@@ -154,11 +188,14 @@ export default function ProductCardPro({ product }) {
         </div>
 
         <div className="mt-auto flex items-end justify-between">
-          <p className="text-lg md:text-2xl font-extrabold text-green-600 tracking-tight">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(product.price)}</p>
+          <p className="text-lg md:text-2xl font-extrabold text-green-600 tracking-tight">
+            {/* ĐÃ SỬA: Hiển thị giá Min-Max trên Card */}
+            {getPriceDisplay()}
+          </p>
           <motion.button 
             whileTap={isOutOfStock ? {} : { scale: 0.9 }} 
             onClick={handleQuickAdd} 
-            disabled={isOutOfStock} // Vô hiệu hóa trực tiếp trên DOM
+            disabled={isOutOfStock}
             className={`w-9 h-9 md:w-12 md:h-12 rounded-xl md:rounded-2xl flex items-center justify-center transition-colors z-10 shadow-sm ${isOutOfStock ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-green-50 hover:bg-green-500 text-green-600 hover:text-white'}`}
           >
             <ShoppingCart className="w-4 h-4 md:w-5 md:h-5" />
@@ -190,7 +227,11 @@ export default function ProductCardPro({ product }) {
               <div className="p-5 md:p-8 md:w-7/12 flex flex-col overflow-y-auto custom-scrollbar pb-safe">
                 {product.isCombo && <span className="w-fit bg-orange-100 text-orange-600 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider mb-2 md:mb-3">Combo Hot</span>}
                 <h2 className="text-xl md:text-3xl font-heading font-extrabold text-slate-900 mb-1 md:mb-2 leading-tight">{product.name}</h2>
-                <p className="text-2xl md:text-3xl font-extrabold text-green-600 mb-4 md:mb-6">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(product.price)}</p>
+                
+                {/* ĐÃ SỬA: Hiển thị giá linh hoạt (Đã chọn vị thì hiện giá vị, chưa chọn thì hiện Min-Max) */}
+                <p className="text-2xl md:text-3xl font-extrabold text-green-600 mb-4 md:mb-6">
+                  {selectedVariant ? formatPrice(currentPrice) : getPriceDisplay()}
+                </p>
                 
                 {isHot && (
                   <div className="flex items-start gap-2 md:gap-3 mb-4 md:mb-6 text-xs md:text-sm text-orange-800 bg-orange-50/80 p-3 md:p-4 rounded-xl border border-orange-100">
@@ -201,7 +242,7 @@ export default function ProductCardPro({ product }) {
 
                 <div className="mb-4 md:mb-6"><p className="text-sm font-bold text-slate-800 mb-2">Mô tả sản phẩm:</p><p className="text-xs md:text-sm text-slate-600 leading-relaxed bg-slate-50 p-3 md:p-4 rounded-xl border border-slate-100 whitespace-pre-wrap">{product.description || 'Món ngon tuyệt đỉnh, 100% lợi nhuận ủng hộ chiến dịch Mùa Hè Xanh.'}</p></div>
 
-                {product.variants && product.variants.filter(v => v.trim() !== '').length > 0 && (
+                {hasNamedVariants && (
                   <div className="mb-4 md:mb-6">
                     <p className="text-sm font-bold text-slate-800 mb-2 md:mb-3">Chọn phân loại:</p>
                     <div className="flex flex-wrap gap-2">
@@ -238,7 +279,7 @@ export default function ProductCardPro({ product }) {
                   className={`w-full py-3.5 md:py-4 rounded-xl font-bold transition-all flex items-center justify-center gap-2 active:scale-[0.98] ${isOutOfStock ? 'bg-slate-200 text-slate-500 cursor-not-allowed shadow-none' : 'bg-slate-900 hover:bg-slate-800 text-white shadow-xl shadow-slate-900/20'}`}
                 >
                   <ShoppingCart className="w-5 h-5" /> 
-                  {isOutOfStock ? 'SẢN PHẨM ĐÃ HẾT' : `THÊM VÀO GIỎ • ${new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(product.price * quantity)}`}
+                  {isOutOfStock ? 'SẢN PHẨM ĐÃ HẾT' : `THÊM VÀO GIỎ • ${formatPrice(currentPrice * quantity)}`}
                 </button>
               </div>
             </motion.div>
