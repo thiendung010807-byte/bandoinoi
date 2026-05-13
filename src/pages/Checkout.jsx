@@ -5,17 +5,26 @@ import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import { motion, AnimatePresence } from 'framer-motion';
 
-// ĐÃ SỬA: Import đúng chuẩn từ thư mục store của bạn
+// Store và Context
 import { useCart } from '../store/useCart'; 
 import { useAuth } from '../contexts/AuthContext';
+
+// Firebase Database (Chỉ cần db để lấy danh sách CTV, không cần storage nữa)
 import { db } from '../config/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
+
+// Thư viện nén ảnh siêu nhẹ
+import imageCompression from 'browser-image-compression';
+
 import toast from 'react-hot-toast';
 import { 
   User, MapPin, Clock, CreditCard, ChevronRight, ChevronLeft, 
-  ShieldCheck, CheckCircle2, Loader2 
+  ShieldCheck, CheckCircle2, Loader2, UploadCloud
 } from 'lucide-react';
 
+// ==========================================
+// ĐIỀU KIỆN KIỂM TRA FORM (YUP SCHEMA)
+// ==========================================
 const schema = yup.object().shape({
   fullName: yup.string().required('Vui lòng nhập họ tên'),
   phone: yup.string().matches(/(84|0[3|5|7|8|9])+([0-9]{8})\b/, 'Số điện thoại không hợp lệ').required('Vui lòng nhập số điện thoại'),
@@ -24,12 +33,10 @@ const schema = yup.object().shape({
   deliveryTime: yup.string().required('Vui lòng chọn thời gian nhận hàng'),
   notes: yup.string(),
   referrer: yup.string(),
-  paymentMethod: yup.string().required(),
-  proofLink: yup.string()
+  paymentMethod: yup.string().required()
 });
 
 export default function Checkout() {
-  // ĐÃ SỬA: Lấy đúng hàm getTotalPrice từ store của bạn
   const { items, getTotalPrice, clearCart } = useCart();
   const { currentUser } = useAuth();
   const navigate = useNavigate();
@@ -37,12 +44,15 @@ export default function Checkout() {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [ctvList, setCtvList] = useState([]); 
+  
+  // State lưu file ảnh minh chứng CK
+  const [proofFile, setProofFile] = useState(null);
 
   const { register, handleSubmit, trigger, watch, formState: { errors } } = useForm({
     resolver: yupResolver(schema),
     defaultValues: {
       fullName: currentUser?.displayName || '', phone: '', addressType: 'NEU', customAddress: '',
-      deliveryTime: '', notes: '', referrer: '', paymentMethod: 'TRANSFER', proofLink: ''
+      deliveryTime: '', notes: '', referrer: '', paymentMethod: 'TRANSFER'
     },
     mode: 'onChange'
   });
@@ -50,14 +60,15 @@ export default function Checkout() {
   const watchAddressType = watch('addressType');
   const watchPaymentMethod = watch('paymentMethod');
 
+  // Lấy danh sách CTV để gợi ý
   useEffect(() => {
-    // Lấy danh sách CTV để gợi ý
     const unsub = onSnapshot(collection(db, 'ctvs'), (snapshot) => {
       setCtvList(snapshot.docs.map(doc => doc.data().name));
     });
     return () => unsub();
   }, []);
 
+  // Nếu giỏ hàng trống
   if (items.length === 0 && !loading) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center text-center animate-fade-in">
@@ -69,6 +80,7 @@ export default function Checkout() {
     );
   }
 
+  // Xử lý chuyển bước (Kiểm tra lỗi trước khi cho qua)
   const handleNextStep = async () => {
     let fieldsToValidate = [];
     if (step === 1) fieldsToValidate = ['fullName', 'phone', 'addressType', 'customAddress'];
@@ -79,21 +91,52 @@ export default function Checkout() {
   };
 
   // ==========================================
-  // HÀM ĐẶT HÀNG QUA BACKEND VERCEL (BẢO MẬT)
+  // HÀM XỬ LÝ ĐẶT HÀNG (NÉN ẢNH -> CLOUDINARY -> VERCEL BACKEND)
   // ==========================================
   const onSubmit = async (data) => {
-    // Kiểm tra bill chuyển khoản nếu chọn TRANSFER
-    if (data.paymentMethod === 'TRANSFER' && !data.proofLink.trim()) {
-      return toast.error("Vui lòng cung cấp Link ảnh bill chuyển khoản!");
+    // Kiểm tra đã chọn ảnh chưa (nếu là chuyển khoản)
+    if (data.paymentMethod === 'TRANSFER' && !proofFile) {
+      return toast.error("Vui lòng tải lên ảnh chụp bill chuyển khoản!");
     }
 
     setLoading(true);
 
     try {
+      let finalProofLink = '';
+
+      // TỰ ĐỘNG NÉN VÀ UPLOAD ẢNH LÊN CLOUDINARY
+      if (data.paymentMethod === 'TRANSFER' && proofFile) {
+        toast.success("Đang xử lý ảnh bill...", { icon: '⏳', duration: 2000 });
+        
+        // 1. Nén ảnh ngầm trên trình duyệt
+        const options = { maxSizeMB: 1, maxWidthOrHeight: 1920, useWebWorker: true };
+        const compressedFile = await imageCompression(proofFile, options);
+
+        // 2. Lấy thông tin Cloudinary từ biến môi trường
+        const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+        const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
+
+        // 3. Chuẩn bị FormData
+        const formData = new FormData();
+        formData.append('file', compressedFile);
+        formData.append('upload_preset', uploadPreset);
+
+        // 4. Upload trực tiếp lên Cloudinary
+        const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!res.ok) throw new Error("Không thể tải ảnh lên Cloudinary");
+
+        const cloudData = await res.json();
+        finalProofLink = cloudData.secure_url; // Link ảnh an toàn HTTPS từ Cloudinary
+      }
+
+      // XỬ LÝ DỮ LIỆU ĐỂ GỬI LÊN VERCEL
       const shipFeeNote = data.addressType === 'NEU' ? 'Miễn phí' : '3k/1km';
       const deliveryAddress = data.addressType === 'NEU' ? 'Bàn truyền thống (NEU)' : data.customAddress;
 
-      // 1. Chỉ chuẩn bị danh sách giỏ hàng (KHÔNG gửi tiền lên Backend)
       const cartItemsToSend = items.map(item => ({
         productId: item.id || item.productId,
         name: item.name,
@@ -101,7 +144,6 @@ export default function Checkout() {
         quantity: item.quantity
       }));
 
-      // 2. Gói thông tin khách hàng
       const customerInfo = {
         userId: currentUser.uid, 
         userEmail: currentUser.email, 
@@ -113,17 +155,14 @@ export default function Checkout() {
         paymentMethod: data.paymentMethod === 'TRANSFER' ? 'Chuyển khoản' : 'COD', 
         notes: data.notes, 
         referrer: data.referrer, 
-        proofLink: data.proofLink,
+        proofLink: finalProofLink, // Gắn link ảnh Cloudinary vào đơn hàng
       };
 
-      // 3. Ném toàn bộ cho Vercel xử lý
+      // GỌI API BACKEND VERCEL ĐỂ TÍNH TIỀN & LƯU DB
       const response = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          items: cartItemsToSend,
-          customerInfo: customerInfo
-        })
+        body: JSON.stringify({ items: cartItemsToSend, customerInfo: customerInfo })
       });
 
       const result = await response.json();
@@ -134,16 +173,19 @@ export default function Checkout() {
         navigate('/my-orders'); 
       } else {
         toast.error(result.message || 'Lỗi khi đặt hàng!');
-        setLoading(false);
       }
 
     } catch (error) {
       console.error(error);
-      toast.error('Mất kết nối với máy chủ!');
+      toast.error('Mất kết nối với máy chủ, vui lòng thử lại!');
+    } finally {
       setLoading(false);
     }
   };
 
+  // ==========================================
+  // RENDER CÁC BƯỚC (STEPS)
+  // ==========================================
   const renderStepContent = () => {
     switch (step) {
       case 1:
@@ -227,11 +269,10 @@ export default function Checkout() {
               </label>
             </div>
 
-            {/* HIỂN THỊ MÃ QR KHI CHỌN CHUYỂN KHOẢN */}
             {watchPaymentMethod === 'TRANSFER' && (
               <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="p-6 bg-slate-50 rounded-2xl border border-slate-200 mt-4">
                 <div className="text-center mb-6">
-                  {/* Mã QR tự động điền giá tiền và nội dung CK */}
+                  {/* API quét mã QR */}
                   <img src={`https://img.vietqr.io/image/TCB-9899170810-compact.png?accountName=TRUONG%20THANH%20HANG&amount=${getTotalPrice()}&addInfo=MHX%20${watch('phone')}`} alt="QR Code" className="w-48 h-48 mx-auto rounded-xl shadow-sm border border-slate-200" />
                   <p className="text-xs text-slate-500 mt-2">Quét mã bằng app Ngân hàng / Momo</p>
                 </div>
@@ -241,9 +282,22 @@ export default function Checkout() {
                   <p className="flex justify-between"><span>Chủ tài khoản:</span> <span className="font-bold text-slate-900">TRUONG THANH HANG</span></p>
                   <p className="flex justify-between text-orange-600 font-medium pt-2 border-t mt-2"><span>Nội dung CK:</span> <span>MHX {watch('phone') || '[SĐT của bạn]'}</span></p>
                 </div>
-                <div className="mt-4">
-                  <label className="block text-sm font-semibold text-slate-700 mb-1">Link ảnh minh chứng (Bắt buộc) *</label>
-                  <input {...register('proofLink')} required className="w-full p-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-green-500 text-sm" placeholder="Dán link ảnh up lên Drive/Imgur vào đây..." />
+                
+                {/* GIAO DIỆN CHỌN FILE ẢNH XỊN XÒ */}
+                <div className="mt-6">
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Tải lên ảnh Bill chuyển khoản (Bắt buộc) *</label>
+                  <div className="flex items-center justify-center w-full">
+                    <label htmlFor="dropzone-file" className="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-300 border-dashed rounded-xl cursor-pointer bg-white hover:bg-slate-50 transition-colors">
+                      <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                        <UploadCloud className={`w-8 h-8 mb-2 ${proofFile ? 'text-green-500' : 'text-slate-400'}`} />
+                        <p className="mb-1 text-sm text-slate-500 font-semibold text-center px-4">
+                          {proofFile ? <span className="text-green-600">Đã chọn: {proofFile.name}</span> : <span>Nhấn để chọn ảnh từ thiết bị</span>}
+                        </p>
+                        <p className="text-xs text-slate-400">Hỗ trợ PNG, JPG, JPEG</p>
+                      </div>
+                      <input id="dropzone-file" type="file" accept="image/*" className="hidden" onChange={(e) => setProofFile(e.target.files[0])} />
+                    </label>
+                  </div>
                 </div>
               </motion.div>
             )}
@@ -256,9 +310,7 @@ export default function Checkout() {
   return (
     <div className="max-w-6xl mx-auto animate-fade-in pb-20 relative">
       
-      {/* ==========================================
-          MÀN HÌNH LOADING KHÓA TƯƠNG TÁC
-          ========================================== */}
+      {/* LỚP PHỦ LOADING */}
       <AnimatePresence>
         {loading && (
           <motion.div 
@@ -267,8 +319,8 @@ export default function Checkout() {
           >
             <div className="bg-white p-8 rounded-3xl flex flex-col items-center shadow-2xl text-center">
               <Loader2 className="w-12 h-12 text-green-500 animate-spin mb-4" />
-              <p className="text-slate-800 font-bold text-lg">Đang xác minh & xử lý đơn hàng...</p>
-              <p className="text-slate-500 text-sm mt-1">Vui lòng không tắt trình duyệt</p>
+              <p className="text-slate-800 font-bold text-lg">Đang xử lý đơn hàng...</p>
+              <p className="text-slate-500 text-sm mt-1">Hệ thống đang tải ảnh và lưu dữ liệu</p>
             </div>
           </motion.div>
         )}
@@ -343,22 +395,14 @@ export default function Checkout() {
               <div className="flex justify-between items-center mb-2 text-slate-300">
                 <span>Tạm tính</span><span>{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(getTotalPrice())}</span>
               </div>
-              
               <div className="flex justify-between items-center mb-4 text-slate-300">
                 <span>Phí giao hàng</span>
-                <span className={`font-medium ${watchAddressType === 'NEU' ? 'text-green-400' : 'text-orange-400'}`}>
-                  {watchAddressType === 'NEU' ? 'Miễn phí' : '3k/1km'}
-                </span>
+                <span className={`font-medium ${watchAddressType === 'NEU' ? 'text-green-400' : 'text-orange-400'}`}>{watchAddressType === 'NEU' ? 'Miễn phí' : '3k/1km'}</span>
               </div>
-              
               <div className="flex justify-between items-center pt-4 border-t border-slate-700/50">
                 <span className="text-lg font-bold">Tổng cộng</span>
                 <span className="text-2xl font-extrabold text-white">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(getTotalPrice())}</span>
               </div>
-              
-              {watchAddressType === 'OTHER' && (
-                <p className="text-[10px] text-slate-400 text-center mt-3 italic">* Phí ship thực tế sẽ được báo khi nhân viên liên hệ xác nhận.</p>
-              )}
             </div>
           </div>
         </div>
