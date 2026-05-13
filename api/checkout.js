@@ -1,14 +1,11 @@
 import admin from 'firebase-admin';
 
-// ==================================================
-// 1. KHỞI TẠO FIREBASE ADMIN SDK (THẺ VIP)
-// ==================================================
+// 1. KHỞI TẠO FIREBASE ADMIN SDK
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert({
       projectId: process.env.VITE_FIREBASE_PROJECT_ID,
       clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      // Xử lý ký tự xuống dòng của Private Key
       privateKey: process.env.FIREBASE_PRIVATE_KEY 
         ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') 
         : undefined,
@@ -19,7 +16,6 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 
 export default async function handler(req, res) {
-  // Chỉ chấp nhận request dạng POST
   if (req.method !== 'POST') return res.status(405).json({ message: 'Method Not Allowed' });
 
   try {
@@ -29,49 +25,39 @@ export default async function handler(req, res) {
       return res.status(400).json({ success: false, message: 'Giỏ hàng đang trống!' });
     }
 
-    // ==================================================
-    // 2. TÍNH LẠI GIÁ TIỀN (BẢO MẬT CHỐNG HACKER F12)
-    // ==================================================
+    // 2. TÍNH LẠI GIÁ TIỀN CHUẨN XÁC
     let totalAmount = 0;
     const validItems = [];
 
-    // Duyệt qua từng món khách đặt, lấy giá GỐC từ Database ra tính
     for (const item of items) {
       const productRef = db.collection('products').doc(item.productId);
       const productSnap = await productRef.get();
 
       if (!productSnap.exists) {
-        return res.status(400).json({ success: false, message: `Món "${item.name}" đã ngừng bán hoặc không tồn tại.` });
+        return res.status(400).json({ success: false, message: `Món "${item.name}" đã ngừng bán.` });
       }
 
       const productData = productSnap.data();
-      let itemPrice = productData.price; // Lấy giá mặc định
+      let itemPrice = productData.price;
 
-      // Nếu món có phân loại (Vị/Size), tìm giá riêng của phân loại đó
       if (item.variant && productData.variants && productData.variantPrices) {
         const variantIndex = productData.variants.indexOf(item.variant);
         if (variantIndex !== -1) {
-          // Ưu tiên giá của biến thể, nếu không có thì lấy giá gốc
           itemPrice = productData.variantPrices[variantIndex] || productData.price;
         }
       }
 
-      // Cộng dồn vào tổng tiền thực tế
       totalAmount += itemPrice * item.quantity;
       
-      // Đóng gói lại Item với giá chuẩn để lưu DB
       validItems.push({
         ...item,
         price: itemPrice 
       });
     }
 
-    // Tạo mã đơn hàng ngắn gọn (VD: MHX-827364)
     const orderId = `MHX-${Math.floor(100000 + Math.random() * 900000)}`;
 
-    // ==================================================
-    // 3. LƯU ĐƠN HÀNG VÀO FIREBASE BẰNG QUYỀN ADMIN
-    // ==================================================
+    // 3. LƯU VÀO FIREBASE
     const newOrder = {
       orderId: orderId,
       userId: customerInfo.userId,
@@ -86,54 +72,68 @@ export default async function handler(req, res) {
       referrer: customerInfo.referrer || '',
       proofLink: customerInfo.proofLink || '',
       items: validItems,
-      total: totalAmount, // Số tiền chuẩn do Backend tự tính
+      total: totalAmount,
       status: 'pending',
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
 
-    // Bỏ qua mọi Rules của Firestore nhờ quyền Admin
     await db.collection('orders').add(newOrder);
 
+    // Cập nhật số lượng đã bán (sold)
+    for (const item of validItems) {
+      await db.collection('products').doc(item.productId).update({
+        sold: admin.firestore.FieldValue.increment(item.quantity)
+      });
+    }
+
     // ==================================================
-    // 4. BẮN DỮ LIỆU ĐỒNG BỘ SANG GOOGLE SHEET (NẾU CÓ)
+    // 4. GÓI DỮ LIỆU VÀ ĐẨY SANG GOOGLE SHEET
     // ==================================================
     const SHEET_URL = process.env.VITE_GOOGLE_SHEET_API_URL;
     const SECRET_TOKEN = process.env.VITE_SHEET_SECRET_TOKEN;
 
     if (SHEET_URL) {
+      // ĐỊNH NGHĨA sheetData Ở ĐÂY ĐỂ TRÁNH LỖI "NOT DEFINED"
+      const sheetData = {
+        token: SECRET_TOKEN,
+        action: "NEW_ORDER", // Đảm bảo bên Google Apps Script của bạn đang đón biến "NEW_ORDER" nhé
+        orderId: orderId,
+        customerName: customerInfo.customerName,
+        phone: `'${customerInfo.phone}`, // Thêm dấu nháy đơn để Google Sheet không làm mất số 0 ở đầu
+        address: customerInfo.address,
+        shipFee: customerInfo.shippingFee,
+        itemsDetail: validItems.map(i => `• ${i.name}${i.variant ? ` (${i.variant})`:''} x${i.quantity}`).join('\n'),
+        totalPrice: totalAmount,
+        payment: customerInfo.paymentMethod,
+        deliveryTime: customerInfo.deliveryTime ? customerInfo.deliveryTime.replace('T', ' ') : '', 
+        referrer: customerInfo.referrer || "Không có",
+        notes: customerInfo.notes || "Không"
+      };
+
       console.log("====== BẮT ĐẦU GỬI SANG GOOGLE SHEET ======");
-      console.log("URL Sheet:", SHEET_URL);
       console.log("Dữ liệu gửi đi:", JSON.stringify(sheetData));
       
-      try {
-        const sheetResponse = await fetch(`${SHEET_URL}?t=${Date.now()}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify(sheetData),
-          redirect: 'follow' // Cực kỳ quan trọng: Google Sheet luôn chuyển hướng (Redirect 302)
-        });
-        
-        const sheetText = await sheetResponse.text();
-        console.log("👉 PHẢN HỒI TỪ GOOGLE SHEET:", sheetText);
-        console.log("====== KẾT THÚC GỬI SHEET ======");
-      } catch (err) {
-        console.error("❌ LỖI KHÔNG GỌI ĐƯỢC SHEET:", err);
-      }
+      // Gọi fetch sang Sheet ngầm (Không dùng await để khách hàng không phải chờ)
+      fetch(`${SHEET_URL}?t=${Date.now()}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(sheetData),
+        redirect: 'follow'
+      })
+      .then(async (res) => {
+        const text = await res.text();
+        console.log("👉 PHẢN HỒI TỪ GOOGLE SHEET:", text);
+      })
+      .catch(err => console.error("❌ LỖI GỌI SHEET:", err));
     }
 
-    // ==================================================
-    // 5. TRẢ KẾT QUẢ THÀNH CÔNG VỀ CHO TRÌNH DUYỆT
-    // ==================================================
+    // 5. TRẢ KẾT QUẢ THÀNH CÔNG VỀ FRONTEND
     return res.status(200).json({ success: true, orderId: orderId });
 
   } catch (error) {
     console.error("====== LỖI BACKEND CHECKOUT ======");
     console.error(error);
-    return res.status(500).json({ 
-      success: false, 
-      message: 'Lỗi máy chủ khi tạo đơn hàng!', 
-      errorDetail: error.message 
-    });
+    return res.status(500).json({ success: false, message: 'Lỗi máy chủ khi tạo đơn hàng!' });
   }
 }
