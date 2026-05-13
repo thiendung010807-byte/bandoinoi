@@ -2,34 +2,36 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
-// https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
-    tailwindcss(), // Tích hợp TailwindCSS Vite Plugin
+    tailwindcss(), 
     react()
   ],
   build: {
-    // 1. BẢO MẬT TỐI ĐA: Tắt hoàn toàn bản đồ mã nguồn (Source Map).
-    // Hacker F12 lên sẽ chỉ thấy 1 khối code chữ cái loằng ngoằng, không thể đọc được logic gốc.
+    // 1. Tắt bản đồ mã nguồn để bảo mật
     sourcemap: false,
     
-    // 2. ÉP XUNG DUNG LƯỢNG: Sử dụng 'esbuild' để băm nát code cực nhanh và nhỏ.
+    // 2. Ép xung thu nhỏ code cực đại
     minify: 'esbuild',
 
-    // 3. CHIA NHỎ FILE (CHUNKING): Giúp web load cực kỳ mượt mà.
-    // Việc tách các thư viện nặng ra riêng sẽ giúp trình duyệt của khách hàng dễ dàng lưu cache.
+    // 3. Tách file (Dạng Function chuẩn cho Vite 8+)
     rollupOptions: {
       output: {
-        manualChunks: {
-          // Nhóm nhân (Core) của React
-          vendor: ['react', 'react-dom', 'react-router-dom'],
-          // Nhóm Firebase (Gói này rất nặng, tách ra độc lập là chuẩn bài nhất)
-          firebase: ['firebase/app', 'firebase/auth', 'firebase/firestore', 'firebase/app-check']
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            // Tách riêng cục Firebase nặng chịch ra một file
+            if (id.includes('firebase')) {
+              return 'firebase';
+            }
+            // Tách bộ nhân React ra một file
+            if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) {
+              return 'vendor';
+            }
+          }
         }
       }
     },
     
-    // Nâng giới hạn cảnh báo dung lượng để lúc build Vercel không bị báo lỗi vàng
     chunkSizeWarningLimit: 1600,
   }
 });
