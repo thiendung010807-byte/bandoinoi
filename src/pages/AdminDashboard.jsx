@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../config/firebase';
 import { 
   collection, query, orderBy, onSnapshot, doc, 
-  updateDoc, addDoc, deleteDoc, serverTimestamp 
+  updateDoc, addDoc, deleteDoc, getDocs, where, serverTimestamp, limit 
 } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
@@ -20,9 +20,12 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isSyncingCtv, setIsSyncingCtv] = useState(false);
   const [filter, setFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
-
+  const [orderLimit, setOrderLimit] = useState(30);
+  const [hasMoreOrders, setHasMoreOrders] = useState(true);
+  
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState(null);
   
@@ -39,12 +42,29 @@ export default function AdminDashboard() {
 
   const GOOGLE_SHEET_VIEW_URL = import.meta.env.VITE_GOOGLE_SHEET_VIEW_URL || "#";
 
+// 1. TẢI ĐƠN HÀNG (CÓ PHÂN TRANG 30 ĐƠN)
   useEffect(() => {
-    const qOrders = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
+    const qOrders = query(
+      collection(db, 'orders'), 
+      orderBy('createdAt', 'desc'), 
+      limit(orderLimit) // Áp dụng giới hạn 30, 60, 90...
+    );
+    
     const unsubOrders = onSnapshot(qOrders, (snapshot) => {
       setOrders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      
+ 
+      if (snapshot.docs.length < orderLimit) {
+        setHasMoreOrders(false);
+      } else {
+        setHasMoreOrders(true);
+      }
     });
 
+    return () => unsubOrders();
+  }, [orderLimit]); 
+
+  useEffect(() => {
     const unsubProducts = onSnapshot(collection(db, 'products'), (snapshot) => {
       setProducts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setLoading(false);
@@ -54,9 +74,13 @@ export default function AdminDashboard() {
       setCtvs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
-    return () => { unsubOrders(); unsubProducts(); unsubCtvs(); };
+    return () => { unsubProducts(); unsubCtvs(); };
   }, []);
-
+  
+const handleLoadMore = () => {
+    setOrderLimit(prevLimit => prevLimit + 30); 
+  };
+  
   const handleUpdateStatus = async (order, newStatus) => {
     let reason = order.cancelReason || '';
     if (newStatus === 'cancelled' && order.status !== 'cancelled') {
@@ -103,6 +127,48 @@ export default function AdminDashboard() {
     } catch (error) { toast.error('Lỗi cập nhật!'); }
   };
 
+  const handleSyncCtvRevenue = async () => {
+    setIsSyncingCtv(true);
+    const toastId = toast.loading('Đang quét toàn bộ dữ liệu để tính toán...');
+    
+    try {
+      const q = query(collection(db, 'orders'), where('status', '==', 'done'));
+      const snapshot = await getDocs(q);
+
+      const stats = {};
+      snapshot.forEach(docSnap => {
+        const data = docSnap.data();
+        const refName = (data.referrer || '').trim().toLowerCase();
+        
+        if (refName) {
+          if (!stats[refName]) stats[refName] = { count: 0, revenue: 0 };
+          stats[refName].count += 1;
+          stats[refName].revenue += (data.total || 0);
+        }
+      });
+
+      const updatePromises = ctvs.map(ctv => {
+        const ctvName = (ctv.name || '').trim().toLowerCase();
+        const ctvStats = stats[ctvName] || { count: 0, revenue: 0 };
+
+        return updateDoc(doc(db, 'ctvs', ctv.id), {
+          successOrders: ctvStats.count,
+          totalRevenue: ctvStats.revenue,
+          lastSynced: serverTimestamp() // Lưu lại thời gian đồng bộ cuối
+        });
+      });
+
+      await Promise.all(updatePromises);
+      toast.success('Đã cập nhật doanh thu mới nhất cho tất cả CTV!', { id: toastId });
+      
+    } catch (error) {
+      console.error(error);
+      toast.error('Lỗi khi tính toán doanh thu!', { id: toastId });
+    } finally {
+      setIsSyncingCtv(false);
+    }
+  };
+   
   const handleAddVariantRow = () => setProductForm(prev => ({...prev, variantsList: [...prev.variantsList, { name: '', image: '', price: '' }]}));
   const handleRemoveVariantRow = (index) => setProductForm(prev => ({...prev, variantsList: prev.variantsList.filter((_, i) => i !== index)}));
   const handleVariantChange = (index, field, value) => {
@@ -212,9 +278,19 @@ export default function AdminDashboard() {
         {activeTab === 'ctv' && (
           <motion.div key="ctv" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-6 px-4 sm:px-0">
             <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
-              <div>
-                <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Award className="w-6 h-6 text-orange-500" /> Quản lý Cộng Tác Viên</h2>
-                <p className="text-sm text-slate-500 mt-1">Gán Email Google của CTV để hệ thống tự nhận diện.</p>
+             <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-4">
+                  <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Award className="w-6 h-6 text-orange-500" /> Quản lý Cộng Tác Viên</h2>
+                  <button 
+                    onClick={handleSyncCtvRevenue} 
+                    disabled={isSyncingCtv}
+                    className="px-4 py-2 text-xs font-bold bg-green-100 hover:bg-green-200 text-green-700 rounded-lg transition-all flex items-center gap-2 disabled:opacity-50"
+                  >
+                    {isSyncingCtv ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    Tính doanh thu mới nhất
+                  </button>
+                </div>
+                <p className="text-sm text-slate-500 mt-1">Gán Email Google của CTV để hệ thống tự nhận diện. Dữ liệu doanh thu chỉ thay đổi khi bấm nút tính.</p>
               </div>
               <form onSubmit={handleAddCTV} className="flex flex-col sm:flex-row gap-2 w-full xl:w-auto">
                 <input type="email" value={newCtvEmail} onChange={(e) => setNewCtvEmail(e.target.value)} placeholder="Email Google của CTV..." className="w-full sm:w-56 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-orange-500 text-sm" required />
@@ -228,14 +304,14 @@ export default function AdminDashboard() {
                 <table className="w-full text-left border-collapse min-w-[800px]">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-100 text-xs text-slate-500 uppercase font-bold">
-                      <th className="p-5">Thông tin CTV</th><th className="p-5 text-center">Đơn chờ/giao</th><th className="p-5 text-center">Đơn thành công</th><th className="p-5 text-right">Doanh thu</th><th className="p-5 text-center">Hành động</th>
+                    < th className="p-5">Thông tin CTV</th><th className="p-5 text-center">Đơn thành công</th><th className="p-5 text-right">Doanh thu</th><th className="p-5 text-center">Hành động</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {ctvs.map(ctv => {
-                      const ctvOrders = orders.filter(o => o.referrer && o.referrer.toLowerCase() === ctv.name.toLowerCase());
-                      const doneOrders = ctvOrders.filter(o => o.status === 'done');
-                      const revenue = doneOrders.reduce((sum, o) => sum + (o.total || 0), 0);
+                      {ctvs.map(ctv => {
+                      const doneCount = ctv.successOrders || 0;
+                      const revenue = ctv.totalRevenue || 0;
+                      
                       return (
                         <tr key={ctv.id} className="hover:bg-slate-50/50 transition-colors">
                           <td className="p-5">
@@ -250,8 +326,7 @@ export default function AdminDashboard() {
                               <p className="text-orange-600 font-bold text-sm">Họ Tên: {ctv.name}</p>
                             )}
                           </td>
-                          <td className="p-5 text-center">{ctvOrders.length - doneOrders.length}</td>
-                          <td className="p-5 text-center font-bold text-green-600">{doneOrders.length}</td>
+                          <td className="p-5 text-center font-bold text-green-600">{doneCount}</td>
                           <td className="p-5 text-right font-extrabold">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(revenue)}</td>
                           <td className="p-5 text-center">
                             <div className="flex justify-center gap-2">
@@ -345,6 +420,22 @@ export default function AdminDashboard() {
                 </tbody>
               </table>
             </div>
+            {hasMoreOrders && filter === 'all' && searchQuery === '' && (
+              <div className="flex justify-center p-6 bg-slate-50/50 border-t border-slate-100">
+                <button 
+                  onClick={handleLoadMore} 
+                  className="px-6 py-3 bg-white border border-slate-200 hover:border-green-500 text-slate-700 hover:text-green-600 font-bold rounded-xl transition-all flex items-center gap-2 shadow-sm"
+                >
+                  Tải thêm 30 đơn cũ hơn
+                </button>
+              </div>
+            )}
+            
+            {!hasMoreOrders && orders.length > 0 && filter === 'all' && searchQuery === '' && (
+              <div className="text-center p-6 text-sm font-semibold text-slate-400 bg-slate-50/50 border-t border-slate-100">
+                Đã hiển thị toàn bộ lịch sử đơn hàng.
+              </div>
+            )} 
           </motion.div>
         )}
 
