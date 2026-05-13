@@ -368,6 +368,22 @@ const handleLoadMore = () => {
                 </tbody>
               </table>
             </div>
+            {hasMoreOrders && filter === 'all' && searchQuery === '' && (
+              <div className="flex justify-center p-6 bg-slate-50/50 border-t border-slate-100">
+                <button 
+                  onClick={handleLoadMore} 
+                  className="px-6 py-3 bg-white border border-slate-200 hover:border-green-500 text-slate-700 hover:text-green-600 font-bold rounded-xl transition-all flex items-center gap-2 shadow-sm"
+                >
+                  Tải thêm 30 đơn cũ hơn
+                </button>
+              </div>
+            )}
+            
+            {!hasMoreOrders && orders.length > 0 && filter === 'all' && searchQuery === '' && (
+              <div className="text-center p-6 text-sm font-semibold text-slate-400 bg-slate-50/50 border-t border-slate-100">
+                Đã hiển thị toàn bộ lịch sử đơn hàng.
+              </div>
+            )} 
           </motion.div>
         )}
 
