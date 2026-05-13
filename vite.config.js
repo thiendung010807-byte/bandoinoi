@@ -11,19 +11,16 @@ export default defineConfig({
     // 1. Tắt bản đồ mã nguồn để bảo mật
     sourcemap: false,
     
-    // 2. Ép xung thu nhỏ code cực đại
-    minify: 'esbuild',
+    // ĐÃ XÓA DÒNG minify: 'esbuild' ở đây. Vite sẽ tự nén code bằng công cụ mặc định xịn nhất của nó.
 
-    // 3. Tách file (Dạng Function chuẩn cho Vite 8+)
+    // 2. Tách file
     rollupOptions: {
       output: {
         manualChunks(id) {
           if (id.includes('node_modules')) {
-            // Tách riêng cục Firebase nặng chịch ra một file
             if (id.includes('firebase')) {
               return 'firebase';
             }
-            // Tách bộ nhân React ra một file
             if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) {
               return 'vendor';
             }
