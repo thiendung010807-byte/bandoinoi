@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../config/firebase';
-import { collection, onSnapshot } from 'firebase/firestore';
+// ĐÃ SỬA: Import query và collection tiêu chuẩn, bỏ orderBy để không bị lỗi ẩn món cũ
+import { collection, onSnapshot, query } from 'firebase/firestore';
 import { motion } from 'framer-motion';
 import { Grid, Flame, Utensils, Coffee, Gift, Tag } from 'lucide-react';
 
@@ -24,14 +25,19 @@ export default function Home() {
   const [filter, setFilter] = useState('all'); 
   
   const productsRef = useRef(null);
+  // Fake data cho banner (bạn có thể nối API thật sau này)
   const [stats, setStats] = useState({ totalOrders: 256, totalRaised: 12500000 });
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'products'), (snapshot) => {
+    // ĐÃ SỬA: Gọi thẳng vào collection 'products', bỏ orderBy để load được các món cũ
+    const q = query(collection(db, 'products'));
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       const productsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setProducts(productsData);
       setLoading(false);
     });
+    
     return () => unsubscribe();
   }, []);
 
@@ -42,11 +48,12 @@ export default function Home() {
     const sold = p.sold || 0;
     
     if (filter === 'all') return true;
-    if (filter === 'hot') return sold >= 30; // Ngưỡng bán chạy
+    if (filter === 'hot') return sold >= 30; // Ngưỡng bán chạy (từ 30 món trở lên)
     
-    // Tương thích ngược: Nếu món cũ dùng isCombo thì vẫn hiện trong tab Combo
+    // Tương thích ngược: Nếu món cũ dùng checkbox isCombo thì vẫn hiện trong tab Combo
     if (filter === 'combo') return p.category === 'combo' || p.isCombo; 
     
+    // Lọc theo phân loại mới
     return p.category === filter;
   });
 
@@ -61,7 +68,7 @@ export default function Home() {
     if (aOutOfStock && !bOutOfStock) return 1;
     if (!aOutOfStock && bOutOfStock) return -1;
 
-    // Ưu tiên 2: Cùng trạng thái thì ưu tiên xếp theo Số lượng đã bán (Giảm dần)
+    // Ưu tiên 2: Cùng trạng thái thì ưu tiên xếp theo Số lượng đã bán (Bán nhiều xếp trên)
     const aSold = a.sold || 0;
     const bSold = b.sold || 0;
     return bSold - aSold;

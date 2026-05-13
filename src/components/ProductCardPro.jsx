@@ -11,17 +11,35 @@ export default function ProductCardPro({ product }) {
   const { addItem, addFlyingItem } = useCart();
   const { currentUser } = useAuth();
 
+  // ==========================================
+  // HÀM TỐI ƯU HÓA ẢNH (ÉP LOAD SIÊU TỐC TRÊN MOBILE)
+  // ==========================================
+  const getOptimizedUrl = (url) => {
+    if (!url) return '';
+    // Nếu là link Cloudinary và chưa được tối ưu, tự động chèn f_auto,q_auto
+    if (url.includes('res.cloudinary.com') && !url.includes('/upload/f_auto,q_auto/')) {
+      return url.replace('/upload/', '/upload/f_auto,q_auto/');
+    }
+    return url;
+  };
+
+  const optimizedMainImage = getOptimizedUrl(product.image);
+  const validVariantImages = product.variantImages 
+    ? product.variantImages.filter(img => img && img.trim() !== '').map(getOptimizedUrl) 
+    : [];
+  const allImages = [optimizedMainImage, ...validVariantImages].filter(Boolean);
+
   const [selectedVariant, setSelectedVariant] = useState('');
   const [quantity, setQuantity] = useState(1);
-  const [currentImage, setCurrentImage] = useState(product.image);
+  const [currentImage, setCurrentImage] = useState(optimizedMainImage);
 
   useEffect(() => {
     if (isModalOpen) {
       setSelectedVariant(''); 
-      setCurrentImage(product.image); 
+      setCurrentImage(optimizedMainImage); 
       setQuantity(1);
     }
-  }, [product, isModalOpen]);
+  }, [product, isModalOpen, optimizedMainImage]);
 
   useEffect(() => {
     if (isModalOpen) document.body.style.overflow = 'hidden';
@@ -32,9 +50,6 @@ export default function ProductCardPro({ product }) {
   const soldCount = product.sold || 0;
   const isOutOfStock = product.inStock === false;
   const isHot = soldCount >= 30 && !isOutOfStock;
-
-  const validVariantImages = product.variantImages ? product.variantImages.filter(img => img && img.trim() !== '') : [];
-  const allImages = [product.image, ...validVariantImages].filter(Boolean);
   const progressPercent = Math.min((soldCount / (soldCount + 20)) * 100, 95);
 
   const hasNamedVariants = product.variants && product.variants.filter(v => v.trim() !== '').length > 0;
@@ -107,7 +122,7 @@ export default function ProductCardPro({ product }) {
 
     const flyingItem = {
       id: Date.now(),
-      image: currentImage || product.image,
+      image: currentImage || optimizedMainImage,
       startX: buttonRect.left + buttonRect.width / 2 - 32, 
       startY: buttonRect.top + buttonRect.height / 2 - 32,
       endX: cartRect.left + cartRect.width / 2 - 32,
@@ -118,8 +133,8 @@ export default function ProductCardPro({ product }) {
       addFlyingItem(flyingItem);
     }
 
-    // Đóng gói sản phẩm với Giá Tiền của vị vừa chọn
-    const productToAdd = { ...product, price: currentPrice };
+    // Đóng gói sản phẩm với Giá Tiền của vị vừa chọn và ảnh tối ưu
+    const productToAdd = { ...product, price: currentPrice, image: optimizedMainImage };
     addItem(productToAdd, quantity, selectedVariant);
 
     setIsModalOpen(false);
@@ -163,9 +178,10 @@ export default function ProductCardPro({ product }) {
         
         <div className="aspect-square rounded-xl md:rounded-2xl bg-slate-50 overflow-hidden relative mb-3 md:mb-4 cursor-pointer" onClick={() => setIsModalOpen(true)}>
           <img 
-            src={product.image || `https://ui-avatars.com/api/?name=${product.name}`} 
+            src={optimizedMainImage || `https://ui-avatars.com/api/?name=${product.name}`} 
             alt={product.name} 
             className={`w-full h-full object-cover transition-transform duration-700 ease-out ${isOutOfStock ? '' : 'group-hover:scale-105 md:group-hover:scale-110'}`} 
+            loading="lazy"
           />
           {isOutOfStock ? (
             <div className="absolute inset-0 bg-slate-900/40 flex items-center justify-center z-10"><span className="bg-slate-900 text-white px-3 py-1.5 md:px-4 md:py-2 rounded-lg md:rounded-xl font-bold text-xs md:text-sm tracking-wider shadow-lg border border-slate-700">HẾT HÀNG</span></div>
@@ -189,7 +205,6 @@ export default function ProductCardPro({ product }) {
 
         <div className="mt-auto flex items-end justify-between">
           <p className="text-lg md:text-2xl font-extrabold text-green-600 tracking-tight">
-            {/* ĐÃ SỬA: Hiển thị giá Min-Max trên Card */}
             {getPriceDisplay()}
           </p>
           <motion.button 
@@ -218,7 +233,7 @@ export default function ProductCardPro({ product }) {
                 {allImages.length > 1 && (
                   <div className="flex gap-2 md:gap-3 w-full overflow-x-auto pb-2 custom-scrollbar">
                     {allImages.map((img, idx) => (
-                      <button key={idx} onClick={() => setCurrentImage(img)} className={`w-14 h-14 md:w-16 md:h-16 rounded-xl overflow-hidden border-2 flex-shrink-0 transition-all ${currentImage === img ? 'border-green-500 ring-2 ring-green-100' : 'border-transparent opacity-60 hover:opacity-100'}`}><img src={img} className="w-full h-full object-cover" /></button>
+                      <button key={idx} onClick={() => setCurrentImage(img)} className={`w-14 h-14 md:w-16 md:h-16 rounded-xl overflow-hidden border-2 flex-shrink-0 transition-all ${currentImage === img ? 'border-green-500 ring-2 ring-green-100' : 'border-transparent opacity-60 hover:opacity-100'}`}><img src={img} className="w-full h-full object-cover" loading="lazy" /></button>
                     ))}
                   </div>
                 )}
@@ -228,7 +243,6 @@ export default function ProductCardPro({ product }) {
                 {product.isCombo && <span className="w-fit bg-orange-100 text-orange-600 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider mb-2 md:mb-3">Combo Hot</span>}
                 <h2 className="text-xl md:text-3xl font-heading font-extrabold text-slate-900 mb-1 md:mb-2 leading-tight">{product.name}</h2>
                 
-                {/* ĐÃ SỬA: Hiển thị giá linh hoạt (Đã chọn vị thì hiện giá vị, chưa chọn thì hiện Min-Max) */}
                 <p className="text-2xl md:text-3xl font-extrabold text-green-600 mb-4 md:mb-6">
                   {selectedVariant ? formatPrice(currentPrice) : getPriceDisplay()}
                 </p>
@@ -249,7 +263,7 @@ export default function ProductCardPro({ product }) {
                       {product.variants.map((v, idx) => {
                         if (v.trim() === '') return null;
                         return (
-                          <button key={idx} onClick={() => { setSelectedVariant(v); if (product.variantImages && product.variantImages[idx]) setCurrentImage(product.variantImages[idx]); else setCurrentImage(product.image); }} className={`px-4 py-2 md:py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all border-2 relative overflow-hidden ${selectedVariant === v ? 'border-green-500 bg-green-50 text-green-700 shadow-sm' : 'border-slate-200 text-slate-600 hover:border-green-300 bg-white'}`}>
+                          <button key={idx} onClick={() => { setSelectedVariant(v); if (product.variantImages && product.variantImages[idx]) setCurrentImage(getOptimizedUrl(product.variantImages[idx])); else setCurrentImage(optimizedMainImage); }} className={`px-4 py-2 md:py-2.5 rounded-xl text-xs md:text-sm font-bold transition-all border-2 relative overflow-hidden ${selectedVariant === v ? 'border-green-500 bg-green-50 text-green-700 shadow-sm' : 'border-slate-200 text-slate-600 hover:border-green-300 bg-white'}`}>
                             {v}
                             {selectedVariant === v && <div className="absolute top-0 right-0 w-4 h-4 bg-green-500 rounded-bl-lg flex items-center justify-center"><Check className="w-3 h-3 text-white" /></div>}
                           </button>
