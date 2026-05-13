@@ -23,7 +23,7 @@ const app = initializeApp(firebaseConfig);
 // LƯU Ý QUAN TRỌNG: 
 // Dùng import.meta.env.PROD để chỉ bật khi build lên Vercel (Production).
 // Nếu bật lúc code local (npm run dev), Google sẽ chặn và báo lỗi 401/400.
-if (typeof window !== "undefined" && import.meta.env.PROD) {
+/*if (typeof window !== "undefined" && import.meta.env.PROD) {
   try {
     initializeAppCheck(app, {
       provider: new ReCaptchaV3Provider(import.meta.env.VITE_RECAPTCHA_SITE_KEY),
@@ -34,7 +34,7 @@ if (typeof window !== "undefined" && import.meta.env.PROD) {
   } catch (error) {
     console.error("Lỗi khi khởi tạo Firebase App Check:", error);
   }
-}
+}*/
 
 // Khởi tạo và xuất các công cụ để các Component khác sử dụng
 export const auth = getAuth(app);
