@@ -25,8 +25,10 @@ export default function AdminDashboard() {
 
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  
+  // Trạng thái Form sản phẩm (Mặc định category là 'food')
   const [productForm, setProductForm] = useState({ 
-    name: '', price: '', description: '', image: '', inStock: true, isCombo: false, 
+    name: '', price: '', description: '', image: '', inStock: true, category: 'food', 
     variantsList: [] 
   });
 
@@ -35,23 +37,19 @@ export default function AdminDashboard() {
   const [editingCtvId, setEditingCtvId] = useState(null);
   const [editCtvName, setEditCtvName] = useState('');
 
-  // Link xem Google Sheet (Link View công khai hoặc nội bộ)
   const GOOGLE_SHEET_VIEW_URL = import.meta.env.VITE_GOOGLE_SHEET_VIEW_URL || "#";
 
   useEffect(() => {
-    // Lắng nghe đơn hàng thời gian thực
     const qOrders = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
     const unsubOrders = onSnapshot(qOrders, (snapshot) => {
       setOrders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
-    // Lắng nghe sản phẩm
     const unsubProducts = onSnapshot(collection(db, 'products'), (snapshot) => {
       setProducts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setLoading(false);
     });
 
-    // Lắng nghe CTV
     const unsubCtvs = onSnapshot(collection(db, 'ctvs'), (snapshot) => {
       setCtvs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
@@ -59,12 +57,8 @@ export default function AdminDashboard() {
     return () => { unsubOrders(); unsubProducts(); unsubCtvs(); };
   }, []);
 
-  // ==========================================
-  // XỬ LÝ CẬP NHẬT TRẠNG THÁI QUA BACKEND (api/update-order.js)
-  // ==========================================
   const handleUpdateStatus = async (order, newStatus) => {
     let reason = order.cancelReason || '';
-    
     if (newStatus === 'cancelled' && order.status !== 'cancelled') {
       const input = window.prompt("Vui lòng nhập lý do hủy đơn (VD: Hết món, khách bom...):", "");
       if (input === null) return; 
@@ -86,52 +80,31 @@ export default function AdminDashboard() {
       });
 
       const result = await response.json();
-      
-      if (result.success) {
-        toast.success('Cập nhật trạng thái thành công!');
-      } else {
-        toast.error(result.message || 'Lỗi cập nhật đơn hàng!');
-      }
-    } catch (error) {
-      console.error(error);
-      toast.error('Mất kết nối với máy chủ Backend!');
-    } finally {
-      setIsSyncing(false); 
-    }
+      if (result.success) toast.success('Cập nhật trạng thái thành công!');
+      else toast.error(result.message || 'Lỗi cập nhật đơn hàng!');
+    } catch (error) { toast.error('Mất kết nối với máy chủ!'); } 
+    finally { setIsSyncing(false); }
   };
 
-  // ==========================================
-  // QUẢN LÝ CỘNG TÁC VIÊN
-  // ==========================================
   const handleAddCTV = async (e) => {
     e.preventDefault();
     if (!newCtvEmail.trim() || !newCtvName.trim()) return;
     try {
-      await addDoc(collection(db, 'ctvs'), { 
-        email: newCtvEmail.trim().toLowerCase(),
-        name: newCtvName.trim(), 
-        createdAt: serverTimestamp() 
-      });
-      setNewCtvEmail(''); setNewCtvName('');
-      toast.success('Đã thêm CTV mới!');
-    } catch (error) { toast.error('Lỗi khi thêm CTV!'); }
+      await addDoc(collection(db, 'ctvs'), { email: newCtvEmail.trim().toLowerCase(), name: newCtvName.trim(), createdAt: serverTimestamp() });
+      setNewCtvEmail(''); setNewCtvName(''); toast.success('Đã thêm CTV!');
+    } catch (error) { toast.error('Lỗi thêm CTV!'); }
   };
 
   const handleSaveEditCTV = async (ctvId) => {
     if (!editCtvName.trim()) return;
     try {
       await updateDoc(doc(db, 'ctvs', ctvId), { name: editCtvName.trim() });
-      setEditingCtvId(null);
-      toast.success('Cập nhật tên CTV thành công!');
+      setEditingCtvId(null); toast.success('Đã cập nhật tên CTV!');
     } catch (error) { toast.error('Lỗi cập nhật!'); }
   };
 
-  // ==========================================
-  // QUẢN LÝ SẢN PHẨM & BIẾN THỂ
-  // ==========================================
   const handleAddVariantRow = () => setProductForm(prev => ({...prev, variantsList: [...prev.variantsList, { name: '', image: '', price: '' }]}));
   const handleRemoveVariantRow = (index) => setProductForm(prev => ({...prev, variantsList: prev.variantsList.filter((_, i) => i !== index)}));
-  
   const handleVariantChange = (index, field, value) => {
     const newList = [...productForm.variantsList]; 
     newList[index][field] = value;
@@ -143,14 +116,13 @@ export default function AdminDashboard() {
     if (!productForm.name || !productForm.price) return toast.error('Vui lòng nhập tên và giá gốc!');
 
     const validVariants = productForm.variantsList.filter(v => v.name.trim() !== '');
-    
     const productData = {
       name: productForm.name, 
       price: Number(productForm.price), 
       description: productForm.description, 
       image: productForm.image, 
       inStock: productForm.inStock, 
-      isCombo: productForm.isCombo, // Truyền biến isCombo vào Database
+      category: productForm.category, // Lưu phân loại vào db
       variants: validVariants.map(v => v.name.trim()), 
       variantImages: validVariants.map(v => v.image.trim()), 
       variantPrices: validVariants.map(v => Number(v.price) || Number(productForm.price)), 
@@ -160,29 +132,24 @@ export default function AdminDashboard() {
     try {
       if (isEditing) { 
         await updateDoc(doc(db, 'products', editingId), productData); 
-        toast.success('Cập nhật sản phẩm thành công!'); 
+        toast.success('Cập nhật thành công!'); 
       } else { 
         await addDoc(collection(db, 'products'), { ...productData, sold: 0 }); 
-        toast.success('Đã thêm món mới vào Menu!'); 
+        toast.success('Đã thêm món mới!'); 
       }
       resetForm();
-    } catch (error) { toast.error('Lỗi khi lưu sản phẩm!'); }
+    } catch (error) { toast.error('Lỗi khi lưu!'); }
   };
 
   const resetForm = () => {
-    setProductForm({ name: '', price: '', description: '', image: '', inStock: true, isCombo: false, variantsList: [] }); 
+    setProductForm({ name: '', price: '', description: '', image: '', inStock: true, category: 'food', variantsList: [] }); 
     setIsEditing(false); setEditingId(null);
   };
 
-  // Bộ lọc tìm kiếm đơn hàng
   const filteredOrders = orders.filter(o => {
     const matchesFilter = filter === 'all' || o.status === filter;
     const searchLower = searchQuery.toLowerCase();
-    const matchesSearch = 
-      o.customerName?.toLowerCase().includes(searchLower) || 
-      o.phone?.includes(searchLower) || 
-      (o.orderId && o.orderId.toLowerCase().includes(searchLower)) ||
-      (o.referrer && o.referrer.toLowerCase().includes(searchLower));
+    const matchesSearch = o.customerName?.toLowerCase().includes(searchLower) || o.phone?.includes(searchLower) || (o.orderId && o.orderId.toLowerCase().includes(searchLower)) || (o.referrer && o.referrer.toLowerCase().includes(searchLower));
     return matchesFilter && matchesSearch;
   });
 
@@ -190,18 +157,12 @@ export default function AdminDashboard() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-8 animate-fade-in pb-20 relative">
-      
-      {/* Overlay khóa màn hình khi đang đồng bộ */}
       <AnimatePresence>
         {isSyncing && (
-          <motion.div 
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-slate-900/60 backdrop-blur-[2px] z-[9999] flex flex-col items-center justify-center text-white"
-          >
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/60 backdrop-blur-[2px] z-[9999] flex flex-col items-center justify-center text-white">
             <div className="bg-white p-8 rounded-3xl flex flex-col items-center shadow-2xl text-center">
               <Loader2 className="w-12 h-12 text-green-500 animate-spin mb-4" />
               <p className="text-slate-800 font-bold text-lg">Đang xử lý Backend...</p>
-              <p className="text-slate-500 text-sm mt-1">Vui lòng giữ kết nối internet</p>
             </div>
           </motion.div>
         )}
@@ -210,22 +171,12 @@ export default function AdminDashboard() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 border-b border-slate-200 pb-6 px-4 sm:px-0">
         <div>
           <h1 className="text-3xl font-heading font-extrabold text-slate-900 tracking-tight">Admin Dashboard</h1>
-          <p className="text-slate-500 font-medium mt-1">Hệ thống quản trị chiến dịch Mùa Hè Xanh</p>
         </div>
       </div>
 
-      {/* Thanh điều hướng Tab */}
       <div className="flex gap-2 p-1 bg-slate-200/50 rounded-2xl w-fit mx-4 sm:mx-0 overflow-x-auto max-w-full custom-scrollbar">
-        {[
-          { id: 'overview', icon: LayoutDashboard, label: 'Tổng quan' },
-          { id: 'orders', icon: Package, label: 'Đơn hàng' },
-          { id: 'products', icon: ShoppingBag, label: 'Sản phẩm' },
-          { id: 'ctv', icon: Users, label: 'CTV' }
-        ].map(tab => (
-          <button 
-            key={tab.id} onClick={() => setActiveTab(tab.id)} 
-            className={`flex items-center gap-2 px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl font-bold transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white text-green-600 shadow-sm' : 'text-slate-600 hover:bg-white/50'}`}
-          >
+        {[{ id: 'overview', icon: LayoutDashboard, label: 'Tổng quan' }, { id: 'orders', icon: Package, label: 'Đơn hàng' }, { id: 'products', icon: ShoppingBag, label: 'Sản phẩm' }, { id: 'ctv', icon: Users, label: 'CTV' }].map(tab => (
+          <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex items-center gap-2 px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl font-bold transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white text-green-600 shadow-sm' : 'text-slate-600 hover:bg-white/50'}`}>
             <tab.icon className="w-5 h-5" /> {tab.label}
           </button>
         ))}
@@ -233,7 +184,7 @@ export default function AdminDashboard() {
 
       <AnimatePresence mode="wait">
         
-        {/* --- TAB TỔNG QUAN --- */}
+        {/* TAB TỔNG QUAN */}
         {activeTab === 'overview' && (
           <motion.div key="overview" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-6 px-4 sm:px-0">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -257,7 +208,7 @@ export default function AdminDashboard() {
           </motion.div>
         )}
 
-        {/* --- TAB CTV --- */}
+        {/* TAB CTV */}
         {activeTab === 'ctv' && (
           <motion.div key="ctv" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-6 px-4 sm:px-0">
             <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
@@ -318,7 +269,7 @@ export default function AdminDashboard() {
           </motion.div>
         )}
 
-        {/* --- TAB ĐƠN HÀNG --- */}
+        {/* TAB ĐƠN HÀNG */}
         {activeTab === 'orders' && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden mx-4 sm:mx-0">
             <div className="p-4 sm:p-6 border-b border-slate-100 bg-slate-50/50 flex flex-col lg:flex-row gap-4 justify-between items-center">
@@ -397,7 +348,7 @@ export default function AdminDashboard() {
           </motion.div>
         )}
 
-        {/* --- TAB SẢN PHẨM --- */}
+        {/* TAB SẢN PHẨM */}
         {activeTab === 'products' && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="grid grid-cols-1 lg:grid-cols-3 gap-8 px-4 sm:px-0">
             
@@ -408,6 +359,7 @@ export default function AdminDashboard() {
               </h2>
               <form onSubmit={handleSaveProduct} className="space-y-4">
                 <input type="text" value={productForm.name} onChange={e => setProductForm({...productForm, name: e.target.value})} className="w-full p-3 bg-slate-50 border rounded-2xl outline-none" placeholder="Tên sản phẩm..." required />
+                
                 <div className="grid grid-cols-2 gap-4">
                   <input type="number" value={productForm.price} onChange={e => setProductForm({...productForm, price: e.target.value})} className="w-full p-3 bg-slate-50 border rounded-2xl outline-none" placeholder="Giá gốc (đ)..." required />
                   <label className="flex items-center gap-2 p-3 bg-slate-50 rounded-2xl border cursor-pointer">
@@ -416,16 +368,24 @@ export default function AdminDashboard() {
                   </label>
                 </div>
 
-                {/* --- FIX 1: NÚT ĐÁNH DẤU COMBO ĐƯỢC BỔ SUNG VÀO ĐÂY --- */}
-                <label className="flex items-center gap-3 p-3 bg-orange-50 rounded-2xl border border-orange-100 cursor-pointer hover:bg-orange-100 transition-colors">
-                  <input type="checkbox" checked={productForm.isCombo || false} onChange={e => setProductForm({...productForm, isCombo: e.target.checked})} className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500" />
-                  <span className="text-sm font-bold text-orange-800">Đánh dấu đây là Combo 🎁</span>
-                </label>
+                {/* KHU VỰC CHỌN PHÂN LOẠI */}
+                <div>
+                  <select 
+                    value={productForm.category} 
+                    onChange={e => setProductForm({...productForm, category: e.target.value})}
+                    className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-green-500 font-bold text-slate-700 appearance-none"
+                  >
+                    <option value="food">🍕 Phân loại: Đồ ăn</option>
+                    <option value="drink">🥤 Phân loại: Đồ uống</option>
+                    <option value="combo">🎁 Phân loại: Combo</option>
+                    <option value="accessory">🎗️ Phân loại: Phụ kiện</option>
+                  </select>
+                </div>
 
                 <textarea value={productForm.description} onChange={e => setProductForm({...productForm, description: e.target.value})} className="w-full p-3 bg-slate-50 border rounded-2xl outline-none min-h-[80px]" placeholder="Mô tả..." />
                 <input type="url" value={productForm.image} onChange={e => setProductForm({...productForm, image: e.target.value})} className="w-full p-3 bg-slate-50 border rounded-2xl outline-none" placeholder="Link ảnh..." />
                 
-                {/* Khu vực Nhập Phân loại */}
+                {/* Khu vực Nhập Phân loại/Vị */}
                 <div className="p-4 bg-green-50/50 rounded-2xl border border-green-100 space-y-3">
                   <div className="flex justify-between items-center">
                     <p className="text-xs font-extrabold text-green-700 uppercase">Phân loại / Vị</p>
@@ -457,14 +417,18 @@ export default function AdminDashboard() {
                 {products.map(product => (
                   <div key={product.id} className="bg-white p-4 rounded-[2rem] shadow-sm border border-slate-100 flex gap-4 group">
                     
-                    {/* --- FIX 2: KHUNG ẢNH ĐƯỢC ÉP HÌNH VUÔNG CHUẨN XÁC --- */}
+                    {/* KHUNG ẢNH VỚI HUY HIỆU THEO CATEGORY */}
                     <div className="w-24 h-24 shrink-0 relative rounded-2xl overflow-hidden bg-slate-50 border border-slate-100 aspect-square">
                       <img src={product.image} className="w-full h-full object-cover" alt={product.name} />
-                      {product.isCombo && (
-                        <span className="absolute top-1 left-1 bg-orange-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm z-10">
-                          COMBO
-                        </span>
-                      )}
+                      
+                      <span className={`absolute top-1 left-1 text-[9px] font-black px-1.5 py-0.5 rounded-md shadow-sm z-10 text-white uppercase tracking-wider ${
+                        product.category === 'drink' ? 'bg-blue-500' :
+                        product.category === 'combo' ? 'bg-purple-500' : 
+                        product.category === 'accessory' ? 'bg-pink-500' : 
+                        'bg-orange-500'
+                      }`}>
+                        {product.category === 'drink' ? 'Đồ uống' : product.category === 'combo' ? 'Combo' : product.category === 'accessory' ? 'Phụ kiện' : 'Đồ ăn'}
+                      </span>
                     </div>
 
                     <div className="flex-1 flex flex-col">
@@ -477,11 +441,9 @@ export default function AdminDashboard() {
                       <div className="flex gap-2 mt-auto pt-2">
                         <button onClick={() => {
                             const loadedVariantsList = (product.variants || []).map((v, idx) => ({ 
-                              name: v, 
-                              image: (product.variantImages && product.variantImages[idx]) || '',
-                              price: (product.variantPrices && product.variantPrices[idx]) || product.price
+                              name: v, image: (product.variantImages && product.variantImages[idx]) || '', price: (product.variantPrices && product.variantPrices[idx]) || product.price
                             }));
-                            setProductForm({ ...product, isCombo: product.isCombo || false, variantsList: loadedVariantsList });
+                            setProductForm({ ...product, category: product.category || (product.isCombo ? 'combo' : 'food'), variantsList: loadedVariantsList });
                             setIsEditing(true); setEditingId(product.id);
                           }} className="flex-1 bg-blue-50 text-blue-600 text-xs font-bold py-2 rounded-xl">Sửa</button>
                         <button onClick={() => { if(window.confirm('Xóa món này?')) deleteDoc(doc(db, 'products', product.id)) }} className="px-3 bg-red-50 text-red-400 rounded-xl"><Trash2 className="w-4 h-4"/></button>
