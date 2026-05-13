@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../config/firebase';
 import { 
   collection, query, orderBy, onSnapshot, doc, 
-  updateDoc, addDoc, deleteDoc, serverTimestamp 
+  updateDoc, addDoc, deleteDoc, serverTimestamp, limit 
 } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
@@ -22,6 +22,8 @@ export default function AdminDashboard() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [filter, setFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [orderLimit, setOrderLimit] = useState(30);
+  const [hasMoreOrders, setHasMoreOrders] = useState(true);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -39,12 +41,29 @@ export default function AdminDashboard() {
 
   const GOOGLE_SHEET_VIEW_URL = import.meta.env.VITE_GOOGLE_SHEET_VIEW_URL || "#";
 
+// 1. TẢI ĐƠN HÀNG (CÓ PHÂN TRANG 30 ĐƠN)
   useEffect(() => {
-    const qOrders = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
+    const qOrders = query(
+      collection(db, 'orders'), 
+      orderBy('createdAt', 'desc'), 
+      limit(orderLimit) // Áp dụng giới hạn 30, 60, 90...
+    );
+    
     const unsubOrders = onSnapshot(qOrders, (snapshot) => {
       setOrders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      
+ 
+      if (snapshot.docs.length < orderLimit) {
+        setHasMoreOrders(false);
+      } else {
+        setHasMoreOrders(true);
+      }
     });
 
+    return () => unsubOrders();
+  }, [orderLimit]); 
+
+  useEffect(() => {
     const unsubProducts = onSnapshot(collection(db, 'products'), (snapshot) => {
       setProducts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setLoading(false);
@@ -54,9 +73,13 @@ export default function AdminDashboard() {
       setCtvs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
-    return () => { unsubOrders(); unsubProducts(); unsubCtvs(); };
+    return () => { unsubProducts(); unsubCtvs(); };
   }, []);
-
+  
+const handleLoadMore = () => {
+    setOrderLimit(prevLimit => prevLimit + 30); 
+  };
+  
   const handleUpdateStatus = async (order, newStatus) => {
     let reason = order.cancelReason || '';
     if (newStatus === 'cancelled' && order.status !== 'cancelled') {
