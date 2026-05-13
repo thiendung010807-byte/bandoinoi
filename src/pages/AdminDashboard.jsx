@@ -73,7 +73,6 @@ export default function AdminDashboard() {
 
     setIsSyncing(true);
     try {
-      // Gọi API Backend trên Vercel để cập nhật Firebase (Admin SDK) và Sheet bí mật
       const response = await fetch('/api/update-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -151,7 +150,7 @@ export default function AdminDashboard() {
       description: productForm.description, 
       image: productForm.image, 
       inStock: productForm.inStock, 
-      isCombo: productForm.isCombo, 
+      isCombo: productForm.isCombo, // Truyền biến isCombo vào Database
       variants: validVariants.map(v => v.name.trim()), 
       variantImages: validVariants.map(v => v.image.trim()), 
       variantPrices: validVariants.map(v => Number(v.price) || Number(productForm.price)), 
@@ -401,6 +400,7 @@ export default function AdminDashboard() {
         {/* --- TAB SẢN PHẨM --- */}
         {activeTab === 'products' && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="grid grid-cols-1 lg:grid-cols-3 gap-8 px-4 sm:px-0">
+            
             <div className="lg:col-span-1 bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 h-fit sticky top-24">
               <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
                 {isEditing ? <Edit className="w-5 h-5 text-blue-500" /> : <Plus className="w-5 h-5 text-green-500" />}
@@ -415,6 +415,13 @@ export default function AdminDashboard() {
                     <span className="text-sm font-bold">Còn hàng</span>
                   </label>
                 </div>
+
+                {/* --- FIX 1: NÚT ĐÁNH DẤU COMBO ĐƯỢC BỔ SUNG VÀO ĐÂY --- */}
+                <label className="flex items-center gap-3 p-3 bg-orange-50 rounded-2xl border border-orange-100 cursor-pointer hover:bg-orange-100 transition-colors">
+                  <input type="checkbox" checked={productForm.isCombo || false} onChange={e => setProductForm({...productForm, isCombo: e.target.checked})} className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500" />
+                  <span className="text-sm font-bold text-orange-800">Đánh dấu đây là Combo 🎁</span>
+                </label>
+
                 <textarea value={productForm.description} onChange={e => setProductForm({...productForm, description: e.target.value})} className="w-full p-3 bg-slate-50 border rounded-2xl outline-none min-h-[80px]" placeholder="Mô tả..." />
                 <input type="url" value={productForm.image} onChange={e => setProductForm({...productForm, image: e.target.value})} className="w-full p-3 bg-slate-50 border rounded-2xl outline-none" placeholder="Link ảnh..." />
                 
@@ -449,7 +456,17 @@ export default function AdminDashboard() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {products.map(product => (
                   <div key={product.id} className="bg-white p-4 rounded-[2rem] shadow-sm border border-slate-100 flex gap-4 group">
-                    <img src={product.image} className="w-20 h-24 rounded-2xl object-cover bg-slate-50" />
+                    
+                    {/* --- FIX 2: KHUNG ẢNH ĐƯỢC ÉP HÌNH VUÔNG CHUẨN XÁC --- */}
+                    <div className="w-24 h-24 shrink-0 relative rounded-2xl overflow-hidden bg-slate-50 border border-slate-100 aspect-square">
+                      <img src={product.image} className="w-full h-full object-cover" alt={product.name} />
+                      {product.isCombo && (
+                        <span className="absolute top-1 left-1 bg-orange-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm z-10">
+                          COMBO
+                        </span>
+                      )}
+                    </div>
+
                     <div className="flex-1 flex flex-col">
                       <h3 className="font-bold text-slate-800 line-clamp-1">{product.name}</h3>
                       <p className="text-green-600 font-extrabold text-lg">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(product.price)}</p>
@@ -464,7 +481,7 @@ export default function AdminDashboard() {
                               image: (product.variantImages && product.variantImages[idx]) || '',
                               price: (product.variantPrices && product.variantPrices[idx]) || product.price
                             }));
-                            setProductForm({ ...product, variantsList: loadedVariantsList });
+                            setProductForm({ ...product, isCombo: product.isCombo || false, variantsList: loadedVariantsList });
                             setIsEditing(true); setEditingId(product.id);
                           }} className="flex-1 bg-blue-50 text-blue-600 text-xs font-bold py-2 rounded-xl">Sửa</button>
                         <button onClick={() => { if(window.confirm('Xóa món này?')) deleteDoc(doc(db, 'products', product.id)) }} className="px-3 bg-red-50 text-red-400 rounded-xl"><Trash2 className="w-4 h-4"/></button>
