@@ -102,33 +102,24 @@ export default async function handler(req, res) {
     const SECRET_TOKEN = process.env.VITE_SHEET_SECRET_TOKEN;
 
     if (SHEET_URL) {
-      // Gộp các món ăn thành 1 chuỗi để dễ đọc trên Sheet
-      const itemsDescription = validItems.map(i => 
-        `${i.quantity}x ${i.name} ${i.variant ? `(${i.variant})` : ''}`
-      ).join('\n');
-
-      // Gửi ngầm không làm ảnh hưởng tốc độ trải nghiệm của khách
-      fetch(`${SHEET_URL}?t=${Date.now()}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({
-          token: SECRET_TOKEN,
-          action: "CREATE_ORDER",
-          orderId: orderId,
-          customerName: customerInfo.customerName,
-          phone: customerInfo.phone,
-          address: customerInfo.address,
-          items: itemsDescription,
-          total: totalAmount,
-          paymentMethod: customerInfo.paymentMethod,
-          shippingFee: customerInfo.shippingFee,
-          status: 'pending',
-          notes: customerInfo.notes || '',
-          referrer: customerInfo.referrer || '',
-          proofLink: customerInfo.proofLink || '',
-          createdAt: new Date().toLocaleString('vi-VN')
-        })
-      }).catch(err => console.error("Lỗi đồng bộ Sheet:", err)); // Lỗi Sheet cũng ko báo cho khách biết
+      console.log("====== BẮT ĐẦU GỬI SANG GOOGLE SHEET ======");
+      console.log("URL Sheet:", SHEET_URL);
+      console.log("Dữ liệu gửi đi:", JSON.stringify(sheetData));
+      
+      try {
+        const sheetResponse = await fetch(`${SHEET_URL}?t=${Date.now()}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(sheetData),
+          redirect: 'follow' // Cực kỳ quan trọng: Google Sheet luôn chuyển hướng (Redirect 302)
+        });
+        
+        const sheetText = await sheetResponse.text();
+        console.log("👉 PHẢN HỒI TỪ GOOGLE SHEET:", sheetText);
+        console.log("====== KẾT THÚC GỬI SHEET ======");
+      } catch (err) {
+        console.error("❌ LỖI KHÔNG GỌI ĐƯỢC SHEET:", err);
+      }
     }
 
     // ==================================================
