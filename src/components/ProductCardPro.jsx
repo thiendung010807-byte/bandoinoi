@@ -49,7 +49,7 @@ export default function ProductCardPro({ product }) {
 
   const soldCount = product.sold || 0;
   const isOutOfStock = product.inStock === false;
-  const isHot = soldCount >= 30 && !isOutOfStock;
+  const isHot = soldCount >= 50 && !isOutOfStock;
   const progressPercent = Math.min((soldCount / (soldCount + 20)) * 100, 95);
 
   const hasNamedVariants = product.variants && product.variants.filter(v => v.trim() !== '').length > 0;
