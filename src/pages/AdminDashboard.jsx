@@ -9,8 +9,9 @@ import toast from 'react-hot-toast';
 import { 
   Package, DollarSign, Clock, ShoppingBag, Plus, Edit, Trash2, X, 
   Search, LayoutDashboard, Filter, TrendingUp, Image as ImageIcon, 
-  ExternalLink, Users, Award, Check, Loader2
+  ExternalLink, Users, Award, Check, Loader2, UploadCloud
 } from 'lucide-react';
+import imageCompression from 'browser-image-compression'; // Import thư viện nén ảnh
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('overview'); 
@@ -21,6 +22,8 @@ export default function AdminDashboard() {
   
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSyncingCtv, setIsSyncingCtv] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false); // State quản lý việc up ảnh
+
   const [filter, setFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [orderLimit, setOrderLimit] = useState(30);
@@ -29,7 +32,7 @@ export default function AdminDashboard() {
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState(null);
   
-  // Trạng thái Form sản phẩm (Mặc định category là 'food')
+  // Trạng thái Form sản phẩm
   const [productForm, setProductForm] = useState({ 
     name: '', price: '', description: '', image: '', inStock: true, category: 'food', 
     variantsList: [] 
@@ -42,18 +45,17 @@ export default function AdminDashboard() {
 
   const GOOGLE_SHEET_VIEW_URL = import.meta.env.VITE_GOOGLE_SHEET_VIEW_URL || "#";
 
-// 1. TẢI ĐƠN HÀNG (CÓ PHÂN TRANG 30 ĐƠN)
+  // 1. TẢI ĐƠN HÀNG (CÓ PHÂN TRANG 30 ĐƠN)
   useEffect(() => {
     const qOrders = query(
       collection(db, 'orders'), 
       orderBy('createdAt', 'desc'), 
-      limit(orderLimit) // Áp dụng giới hạn 30, 60, 90...
+      limit(orderLimit)
     );
     
     const unsubOrders = onSnapshot(qOrders, (snapshot) => {
       setOrders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       
- 
       if (snapshot.docs.length < orderLimit) {
         setHasMoreOrders(false);
       } else {
@@ -77,7 +79,7 @@ export default function AdminDashboard() {
     return () => { unsubProducts(); unsubCtvs(); };
   }, []);
   
-const handleLoadMore = () => {
+  const handleLoadMore = () => {
     setOrderLimit(prevLimit => prevLimit + 30); 
   };
   
@@ -154,7 +156,7 @@ const handleLoadMore = () => {
         return updateDoc(doc(db, 'ctvs', ctv.id), {
           successOrders: ctvStats.count,
           totalRevenue: ctvStats.revenue,
-          lastSynced: serverTimestamp() // Lưu lại thời gian đồng bộ cuối
+          lastSynced: serverTimestamp() 
         });
       });
 
@@ -169,8 +171,54 @@ const handleLoadMore = () => {
     }
   };
    
+  // ==========================================
+  // HÀM UPLOAD ẢNH (DÙNG CLOUDINARY) CHO ADMIN
+  // ==========================================
+  const handleImageUpload = async (file, isVariant = false, variantIndex = null) => {
+    if (!file) return;
+
+    setIsUploadingImage(true);
+    const toastId = toast.loading('Đang nén và tải ảnh lên...');
+
+    try {
+      const options = { maxSizeMB: 1, maxWidthOrHeight: 1920, useWebWorker: true };
+      const compressedFile = await imageCompression(file, options);
+
+      const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+      const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
+
+      const formData = new FormData();
+      formData.append('file', compressedFile);
+      formData.append('upload_preset', uploadPreset);
+
+      const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!res.ok) throw new Error("Không thể tải ảnh lên Cloudinary");
+
+      const cloudData = await res.json();
+      const optimizedUrl = cloudData.secure_url.replace('/upload/', '/upload/f_auto,q_auto/');
+
+      if (isVariant && variantIndex !== null) {
+        handleVariantChange(variantIndex, 'image', optimizedUrl);
+      } else {
+        setProductForm(prev => ({ ...prev, image: optimizedUrl }));
+      }
+
+      toast.success('Tải ảnh thành công!', { id: toastId });
+    } catch (error) {
+      console.error(error);
+      toast.error('Lỗi khi tải ảnh lên. Hãy thử lại!', { id: toastId });
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
+
   const handleAddVariantRow = () => setProductForm(prev => ({...prev, variantsList: [...prev.variantsList, { name: '', image: '', price: '' }]}));
   const handleRemoveVariantRow = (index) => setProductForm(prev => ({...prev, variantsList: prev.variantsList.filter((_, i) => i !== index)}));
+  
   const handleVariantChange = (index, field, value) => {
     const newList = [...productForm.variantsList]; 
     newList[index][field] = value;
@@ -180,6 +228,7 @@ const handleLoadMore = () => {
   const handleSaveProduct = async (e) => {
     e.preventDefault();
     if (!productForm.name || !productForm.price) return toast.error('Vui lòng nhập tên và giá gốc!');
+    if (!productForm.image) return toast.error('Vui lòng tải lên ảnh sản phẩm!');
 
     const validVariants = productForm.variantsList.filter(v => v.name.trim() !== '');
     const productData = {
@@ -188,7 +237,7 @@ const handleLoadMore = () => {
       description: productForm.description, 
       image: productForm.image, 
       inStock: productForm.inStock, 
-      category: productForm.category, // Lưu phân loại vào db
+      category: productForm.category, 
       variants: validVariants.map(v => v.name.trim()), 
       variantImages: validVariants.map(v => v.image.trim()), 
       variantPrices: validVariants.map(v => Number(v.price) || Number(productForm.price)), 
@@ -304,7 +353,7 @@ const handleLoadMore = () => {
                 <table className="w-full text-left border-collapse min-w-[800px]">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-100 text-xs text-slate-500 uppercase font-bold">
-                    < th className="p-5">Thông tin CTV</th><th className="p-5 text-center">Đơn thành công</th><th className="p-5 text-right">Doanh thu</th><th className="p-5 text-center">Hành động</th>
+                    <th className="p-5">Thông tin CTV</th><th className="p-5 text-center">Đơn thành công</th><th className="p-5 text-right">Doanh thu</th><th className="p-5 text-center">Hành động</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
@@ -474,9 +523,27 @@ const handleLoadMore = () => {
                 </div>
 
                 <textarea value={productForm.description} onChange={e => setProductForm({...productForm, description: e.target.value})} className="w-full p-3 bg-slate-50 border rounded-2xl outline-none min-h-[80px]" placeholder="Mô tả..." />
-                <input type="url" value={productForm.image} onChange={e => setProductForm({...productForm, image: e.target.value})} className="w-full p-3 bg-slate-50 border rounded-2xl outline-none" placeholder="Link ảnh..." />
                 
-                {/* Khu vực Nhập Phân loại/Vị */}
+                {/* UPLOAD ẢNH CHÍNH BẰNG CLOUDINARY */}
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Ảnh sản phẩm chính *</label>
+                  <div className="flex items-center gap-3">
+                    {productForm.image && (
+                      <div className="w-16 h-16 rounded-xl overflow-hidden border-2 border-green-500 shrink-0">
+                        <img src={productForm.image} alt="Preview" className="w-full h-full object-cover" />
+                      </div>
+                    )}
+                    <label className="flex-1 flex flex-col items-center justify-center h-16 border-2 border-slate-300 border-dashed rounded-xl cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors">
+                      <div className="flex flex-col items-center justify-center">
+                        <UploadCloud className={`w-5 h-5 mb-1 ${isUploadingImage ? 'text-slate-400' : 'text-green-500'}`} />
+                        <p className="text-xs text-slate-500 font-semibold">{isUploadingImage ? 'Đang tải lên...' : 'Bấm để tải ảnh lên'}</p>
+                      </div>
+                      <input type="file" accept="image/*" className="hidden" disabled={isUploadingImage} onChange={(e) => handleImageUpload(e.target.files[0])} />
+                    </label>
+                  </div>
+                </div>
+                
+                {/* Khu vực Nhập Phân loại/Vị CÓ UPLOAD ẢNH RIÊNG */}
                 <div className="p-4 bg-green-50/50 rounded-2xl border border-green-100 space-y-3">
                   <div className="flex justify-between items-center">
                     <p className="text-xs font-extrabold text-green-700 uppercase">Phân loại / Vị</p>
@@ -486,7 +553,19 @@ const handleLoadMore = () => {
                     <div key={index} className="flex gap-2 items-start bg-white p-3 rounded-xl border border-green-200/60 shadow-sm">
                       <div className="flex-1 space-y-2">
                         <input type="text" value={item.name} onChange={e => handleVariantChange(index, 'name', e.target.value)} className="w-full p-2 bg-slate-50 rounded-lg outline-none text-sm font-semibold" placeholder="Tên vị..." />
-                        <input type="number" value={item.price} onChange={e => handleVariantChange(index, 'price', e.target.value)} className="w-full p-2 bg-slate-50 rounded-lg outline-none text-sm" placeholder="Giá riêng (nếu có)..." />
+                        
+                        <div className="flex gap-2">
+                          <input type="number" value={item.price} onChange={e => handleVariantChange(index, 'price', e.target.value)} className="w-full p-2 bg-slate-50 rounded-lg outline-none text-sm" placeholder="Giá riêng (nếu có)..." />
+                          <label className={`shrink-0 flex items-center justify-center px-3 rounded-lg cursor-pointer transition-colors ${item.image ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`} title="Tải ảnh riêng cho loại này">
+                            {item.image ? <ImageIcon className="w-4 h-4" /> : <UploadCloud className="w-4 h-4" />}
+                            <input type="file" accept="image/*" className="hidden" disabled={isUploadingImage} onChange={(e) => handleImageUpload(e.target.files[0], true, index)} />
+                          </label>
+                        </div>
+                        {item.image && (
+                          <div className="mt-1">
+                            <img src={item.image} alt="Variant preview" className="h-10 w-10 object-cover rounded-lg border border-slate-200" />
+                          </div>
+                        )}
                       </div>
                       <button type="button" onClick={() => handleRemoveVariantRow(index)} className="p-2 text-red-400"><Trash2 className="w-4 h-4" /></button>
                     </div>
@@ -494,9 +573,9 @@ const handleLoadMore = () => {
                 </div>
                 
                 <div className="flex gap-2 pt-2">
-                  {isEditing && <button type="button" onClick={resetForm} className="flex-1 py-4 bg-slate-100 rounded-2xl font-bold">Hủy</button>}
-                  <button type="submit" className={`flex-[2] py-4 rounded-2xl font-bold text-white shadow-lg ${isEditing ? 'bg-blue-500' : 'bg-green-500'}`}>
-                    {isEditing ? 'CẬP NHẬT' : 'THÊM MÓN'}
+                  {isEditing && <button type="button" onClick={resetForm} disabled={isUploadingImage} className="flex-1 py-4 bg-slate-100 rounded-2xl font-bold">Hủy</button>}
+                  <button type="submit" disabled={isUploadingImage} className={`flex-[2] py-4 rounded-2xl font-bold text-white shadow-lg transition-all ${isUploadingImage ? 'bg-slate-400 cursor-not-allowed' : isEditing ? 'bg-blue-500 hover:bg-blue-600' : 'bg-green-500 hover:bg-green-600'}`}>
+                    {isUploadingImage ? 'ĐANG TẢI ẢNH...' : isEditing ? 'CẬP NHẬT' : 'THÊM MÓN'}
                   </button>
                 </div>
               </form>
