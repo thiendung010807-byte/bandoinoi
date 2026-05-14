@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../config/firebase';
-// ĐÃ SỬA: Import query và collection tiêu chuẩn, bỏ orderBy để không bị lỗi ẩn món cũ
 import { collection, onSnapshot, query } from 'firebase/firestore';
 import { motion } from 'framer-motion';
 import { Grid, Flame, Utensils, Coffee, Gift, Tag } from 'lucide-react';
@@ -9,13 +8,13 @@ import Hero from '../components/Hero';
 import ProductCardPro from '../components/ProductCardPro';
 import SkeletonCard from '../components/SkeletonCard';
 
-// Danh sách các tab phân loại sản phẩm
+// ĐÃ SỬA: Đưa tab "Combo" lên vị trí số 2 (Ngay sau "Tất cả")
 const CATEGORIES = [
   { id: 'all', label: 'Tất cả', icon: Grid },
+  { id: 'combo', label: 'Combo', icon: Gift },
   { id: 'hot', label: 'Bán chạy', icon: Flame },
   { id: 'food', label: 'Đồ ăn', icon: Utensils },
   { id: 'drink', label: 'Đồ uống', icon: Coffee },
-  { id: 'combo', label: 'Combo', icon: Gift },
   { id: 'accessory', label: 'Phụ kiện', icon: Tag },
 ];
 
@@ -25,11 +24,9 @@ export default function Home() {
   const [filter, setFilter] = useState('all'); 
   
   const productsRef = useRef(null);
-  // Fake data cho banner (bạn có thể nối API thật sau này)
   const [stats, setStats] = useState({ totalOrders: 256, totalRaised: 12500000 });
 
   useEffect(() => {
-    // ĐÃ SỬA: Gọi thẳng vào collection 'products', bỏ orderBy để load được các món cũ
     const q = query(collection(db, 'products'));
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -42,33 +39,38 @@ export default function Home() {
   }, []);
 
   // ==========================================
-  // 1. LOGIC LỌC SẢN PHẨM (FILTER)
+  // HÀM XỬ LÝ CLICK TAB & CUỘN RA GIỮA (UX MOBILE)
+  // ==========================================
+  const handleTabClick = (categoryId, event) => {
+    setFilter(categoryId);
+    // Tự động cuộn phần tử vừa click ra giữa vùng chứa một cách mượt mà
+    event.currentTarget.scrollIntoView({
+      behavior: 'smooth',
+      inline: 'center',
+      block: 'nearest'
+    });
+  };
+
+  // ==========================================
+  // LOGIC LỌC & SẮP XẾP SẢN PHẨM
   // ==========================================
   let displayedProducts = products.filter(p => {
     const sold = p.sold || 0;
     
     if (filter === 'all') return true;
-    if (filter === 'hot') return sold >= 30; // Ngưỡng bán chạy (từ 30 món trở lên)
-    
-    // Tương thích ngược: Nếu món cũ dùng checkbox isCombo thì vẫn hiện trong tab Combo
+    if (filter === 'hot') return sold >= 30; 
     if (filter === 'combo') return p.category === 'combo' || p.isCombo; 
     
-    // Lọc theo phân loại mới
     return p.category === filter;
   });
 
-  // ==========================================
-  // 2. LOGIC SẮP XẾP SẢN PHẨM (SORTING)
-  // ==========================================
   displayedProducts.sort((a, b) => {
     const aOutOfStock = a.inStock === false;
     const bOutOfStock = b.inStock === false;
 
-    // Ưu tiên 1: Đẩy hàng "Hết hàng" xuống cuối cùng
     if (aOutOfStock && !bOutOfStock) return 1;
     if (!aOutOfStock && bOutOfStock) return -1;
 
-    // Ưu tiên 2: Cùng trạng thái thì ưu tiên xếp theo Số lượng đã bán (Bán nhiều xếp trên)
     const aSold = a.sold || 0;
     const bSold = b.sold || 0;
     return bSold - aSold;
@@ -85,19 +87,20 @@ export default function Home() {
       />
 
       <div ref={productsRef} className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 scroll-mt-24">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 gap-4">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 gap-4 overflow-hidden">
           <div>
             <h2 className="text-3xl font-heading font-extrabold text-slate-900 tracking-tight">Menu Gây Quỹ</h2>
             <p className="text-slate-500 mt-2 font-medium">100% lợi nhuận sẽ được đóng góp vào quỹ thiện nguyện</p>
           </div>
           
           {/* THANH LỌC PHÂN LOẠI (CATEGORY BAR) */}
-          <div className="flex items-center gap-1.5 bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm overflow-x-auto w-full md:w-auto custom-scrollbar">
+          {/* ĐÃ SỬA: Thêm scroll-smooth và snap-x để vuốt mượt trên mobile */}
+          <div className="flex items-center gap-1.5 bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm overflow-x-auto w-full md:w-auto custom-scrollbar scroll-smooth snap-x">
             {CATEGORIES.map(cat => (
               <button 
                 key={cat.id}
-                onClick={() => setFilter(cat.id)} 
-                className={`shrink-0 flex items-center gap-1.5 px-4 py-2 text-sm font-bold rounded-xl transition-all duration-300 ${
+                onClick={(e) => handleTabClick(cat.id, e)} 
+                className={`snap-center shrink-0 flex items-center gap-1.5 px-4 py-2 text-sm font-bold rounded-xl transition-all duration-300 ${
                   filter === cat.id 
                     ? cat.id === 'hot' 
                       ? 'bg-orange-50 text-orange-600 shadow-sm' 
