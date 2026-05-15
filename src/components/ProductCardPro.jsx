@@ -170,13 +170,6 @@ export default function ProductCardPro({ product }) {
         whileHover={{ y: isOutOfStock ? 0 : -5 }} 
         className={`bg-white rounded-[1.5rem] md:rounded-[2rem] p-3 md:p-4 shadow-sm hover:shadow-soft transition-all duration-300 border border-slate-100 flex flex-col group relative ${isOutOfStock ? 'grayscale opacity-75' : ''}`}
       >
-        {/* ĐÃ CẬP NHẬT: Hiển thị tag tự định nghĩa (customTag) */}
-        {product.customTag && !isOutOfStock && (
-          <div className="absolute top-4 left-4 md:top-6 md:left-6 z-10 bg-indigo-600 text-white text-[9px] md:text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider shadow-md">
-            {product.customTag}
-          </div>
-        )}
-        
         <div className="aspect-square rounded-xl md:rounded-2xl bg-slate-50 overflow-hidden relative mb-3 md:mb-4 cursor-pointer" onClick={() => setIsModalOpen(true)}>
           <img 
             src={optimizedMainImage || `https://ui-avatars.com/api/?name=${product.name}`} 
@@ -193,7 +186,17 @@ export default function ProductCardPro({ product }) {
 
         <div className="flex flex-col flex-grow cursor-pointer" onClick={() => setIsModalOpen(true)}>
           <h3 className="font-heading font-bold text-slate-800 text-sm md:text-lg leading-snug mb-1 line-clamp-2">{product.name}</h3>
-          <div className="mt-2 mb-3 md:mt-3 md:mb-4">
+          
+          {/* ĐÃ CẬP NHẬT: Hiển thị tag tự định nghĩa (customTag) DƯỚI tên sản phẩm */}
+          {product.customTag && (
+            <div className="mt-1 mb-1">
+              <span className="inline-block bg-indigo-50 border border-indigo-100 text-indigo-600 text-[9px] md:text-[10px] font-black px-2 py-0.5 rounded md:rounded-md uppercase tracking-wider line-clamp-1">
+                {product.customTag}
+              </span>
+            </div>
+          )}
+
+          <div className="mt-1 mb-3 md:mt-2 md:mb-4">
             <div className="flex justify-between text-[10px] md:text-xs mb-1 md:mb-1.5">
               {isHot ? (<span className="text-orange-500 font-bold flex items-center gap-1"><Flame className="w-3 h-3" /> <span className="hidden xs:inline">Đang bán chạy</span><span className="xs:hidden">Hot</span></span>) : (<span className="text-slate-500 font-medium">Lượt mua</span>)}
               <span className="text-slate-500 font-medium">Đã bán {soldCount}</span>
@@ -243,7 +246,7 @@ export default function ProductCardPro({ product }) {
               <div className="p-5 md:p-8 md:w-7/12 flex flex-col overflow-y-auto custom-scrollbar pb-safe">
                 {/* ĐÃ CẬP NHẬT: Hiển thị tag tự định nghĩa (customTag) trong Modal */}
                 {product.customTag && (
-                  <span className="w-fit bg-indigo-100 text-indigo-600 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider mb-2 md:mb-3">
+                  <span className="w-fit bg-indigo-100 text-indigo-600 border border-indigo-200 text-[10px] font-black px-3 py-1 rounded-md uppercase tracking-wider mb-2 md:mb-3">
                     {product.customTag}
                   </span>
                 )}

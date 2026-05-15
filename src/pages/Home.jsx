@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../config/firebase';
 import { collection, onSnapshot, query } from 'firebase/firestore';
 import { motion } from 'framer-motion';
-import { Grid, Flame, Utensils, Coffee, Gift, Tag } from 'lucide-react';
+import { Grid, Flame, Utensils, CakeSlice, Gift, Tag, Heart } from 'lucide-react';
 
 import Hero from '../components/Hero';
 import ProductCardPro from '../components/ProductCardPro';
@@ -12,8 +12,8 @@ import SkeletonCard from '../components/SkeletonCard';
 const CATEGORIES = [
   { id: 'thbn', label: 'Tự hào Bắc Ninh', icon: Flame },
   { id: 'combo', label: 'Combo tiết kiệm', icon: Gift },
-  { id: 'monle', label: 'Món lẻ', icon: Coffee },
-  { id: 'quanho', label: 'Mâm lễ Quan họ', icon: Tag },
+  { id: 'monle', label: 'Món lẻ', icon: CakeSlice },
+  { id: 'quanho', label: 'Mâm lễ Quan họ', icon: Heart },
 ];
 
 export default function Home() {
