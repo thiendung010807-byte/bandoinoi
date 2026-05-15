@@ -19,7 +19,7 @@ const CATEGORIES = [
 export default function Home() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all'); 
+  const [filter, setFilter] = useState('thbn'); 
   
   const productsRef = useRef(null);
   const [stats, setStats] = useState({ totalOrders: 256, totalRaised: 12500000 });
@@ -53,13 +53,8 @@ export default function Home() {
   // LOGIC LỌC ĐA DANH MỤC (Hỗ trợ cả sản phẩm cũ & mới)
   // ==========================================
   let displayedProducts = products.filter(p => {
-    if (filter === 'all') return true;
-    
     // Gom dữ liệu: Nếu là mảng (form mới) thì dùng luôn, nếu là chuỗi (sản phẩm cũ) thì bọc vào mảng
     const productCategories = p.categories || (p.category ? [p.category] : []);
-    
-    // Tương thích ngược: Nếu tab là combo và thuộc tính cũ isCombo = true
-    if (filter === 'combo' && p.isCombo) return true;
     
     // Lọc theo mảng danh mục
     return productCategories.includes(filter);
