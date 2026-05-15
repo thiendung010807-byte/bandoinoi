@@ -170,9 +170,10 @@ export default function ProductCardPro({ product }) {
         whileHover={{ y: isOutOfStock ? 0 : -5 }} 
         className={`bg-white rounded-[1.5rem] md:rounded-[2rem] p-3 md:p-4 shadow-sm hover:shadow-soft transition-all duration-300 border border-slate-100 flex flex-col group relative ${isOutOfStock ? 'grayscale opacity-75' : ''}`}
       >
-        {product.isCombo && !isOutOfStock && (
-          <div className="absolute top-4 left-4 md:top-6 md:left-6 z-10 bg-orange-500 text-white text-[9px] md:text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider shadow-md">
-            Combo Hot
+        {/* ĐÃ CẬP NHẬT: Hiển thị tag tự định nghĩa (customTag) */}
+        {product.customTag && !isOutOfStock && (
+          <div className="absolute top-4 left-4 md:top-6 md:left-6 z-10 bg-indigo-600 text-white text-[9px] md:text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider shadow-md">
+            {product.customTag}
           </div>
         )}
         
@@ -240,7 +241,13 @@ export default function ProductCardPro({ product }) {
               </div>
               
               <div className="p-5 md:p-8 md:w-7/12 flex flex-col overflow-y-auto custom-scrollbar pb-safe">
-                {product.isCombo && <span className="w-fit bg-orange-100 text-orange-600 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider mb-2 md:mb-3">Combo Hot</span>}
+                {/* ĐÃ CẬP NHẬT: Hiển thị tag tự định nghĩa (customTag) trong Modal */}
+                {product.customTag && (
+                  <span className="w-fit bg-indigo-100 text-indigo-600 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider mb-2 md:mb-3">
+                    {product.customTag}
+                  </span>
+                )}
+                
                 <h2 className="text-xl md:text-3xl font-heading font-extrabold text-slate-900 mb-1 md:mb-2 leading-tight">{product.name}</h2>
                 
                 <p className="text-2xl md:text-3xl font-extrabold text-green-600 mb-4 md:mb-6">

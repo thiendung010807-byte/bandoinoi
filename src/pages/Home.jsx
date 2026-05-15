@@ -8,14 +8,12 @@ import Hero from '../components/Hero';
 import ProductCardPro from '../components/ProductCardPro';
 import SkeletonCard from '../components/SkeletonCard';
 
-// ĐÃ SỬA: Đưa tab "Combo" lên vị trí số 2 (Ngay sau "Tất cả")
+// ĐÃ CẬP NHẬT: Thêm nút "Tất cả" lên đầu và giữ các danh mục tùy chỉnh của bạn
 const CATEGORIES = [
-  { id: 'all', label: 'Tất cả', icon: Grid },
-  { id: 'combo', label: 'Combo', icon: Gift },
-  { id: 'hot', label: 'Bán chạy', icon: Flame },
-  { id: 'food', label: 'Đồ ăn', icon: Utensils },
-  { id: 'drink', label: 'Đồ uống', icon: Coffee },
-  { id: 'accessory', label: 'Phụ kiện', icon: Tag },
+  { id: 'thbn', label: 'Tự hào Bắc Ninh', icon: Flame },
+  { id: 'combo', label: 'Combo tiết kiệm', icon: Gift },
+  { id: 'monle', label: 'Món lẻ', icon: Coffee },
+  { id: 'quanho', label: 'Mâm lễ Quan họ', icon: Tag },
 ];
 
 export default function Home() {
@@ -52,18 +50,22 @@ export default function Home() {
   };
 
   // ==========================================
-  // LOGIC LỌC & SẮP XẾP SẢN PHẨM
+  // LOGIC LỌC ĐA DANH MỤC (Hỗ trợ cả sản phẩm cũ & mới)
   // ==========================================
   let displayedProducts = products.filter(p => {
-    const sold = p.sold || 0;
-    
     if (filter === 'all') return true;
-    if (filter === 'hot') return sold >= 30; 
-    if (filter === 'combo') return p.category === 'combo' || p.isCombo; 
     
-    return p.category === filter;
+    // Gom dữ liệu: Nếu là mảng (form mới) thì dùng luôn, nếu là chuỗi (sản phẩm cũ) thì bọc vào mảng
+    const productCategories = p.categories || (p.category ? [p.category] : []);
+    
+    // Tương thích ngược: Nếu tab là combo và thuộc tính cũ isCombo = true
+    if (filter === 'combo' && p.isCombo) return true;
+    
+    // Lọc theo mảng danh mục
+    return productCategories.includes(filter);
   });
 
+  // Sắp xếp: Hết hàng đẩy xuống cuối, sau đó sắp xếp theo số lượng bán
   displayedProducts.sort((a, b) => {
     const aOutOfStock = a.inStock === false;
     const bOutOfStock = b.inStock === false;
@@ -94,7 +96,6 @@ export default function Home() {
           </div>
           
           {/* THANH LỌC PHÂN LOẠI (CATEGORY BAR) */}
-          {/* ĐÃ SỬA: Thêm scroll-smooth và snap-x để vuốt mượt trên mobile */}
           <div className="flex items-center gap-1.5 bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm overflow-x-auto w-full md:w-auto custom-scrollbar scroll-smooth snap-x">
             {CATEGORIES.map(cat => (
               <button 
@@ -102,13 +103,11 @@ export default function Home() {
                 onClick={(e) => handleTabClick(cat.id, e)} 
                 className={`snap-center shrink-0 flex items-center gap-1.5 px-4 py-2 text-sm font-bold rounded-xl transition-all duration-300 ${
                   filter === cat.id 
-                    ? cat.id === 'hot' 
-                      ? 'bg-orange-50 text-orange-600 shadow-sm' 
-                      : 'bg-green-500 text-white shadow-md shadow-green-500/20' 
+                    ? 'bg-green-500 text-white shadow-md shadow-green-500/20' 
                     : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
                 }`}
               >
-                <cat.icon className={`w-4 h-4 ${filter === cat.id && cat.id !== 'hot' ? 'text-white' : ''} ${cat.id === 'hot' && filter !== 'hot' ? 'text-orange-500' : ''}`} />
+                <cat.icon className={`w-4 h-4 ${filter === cat.id ? 'text-white' : ''}`} />
                 {cat.label}
               </button>
             ))}

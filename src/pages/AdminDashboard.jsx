@@ -11,7 +11,15 @@ import {
   Search, LayoutDashboard, Filter, TrendingUp, Image as ImageIcon, 
   ExternalLink, Users, Award, Check, Loader2, UploadCloud
 } from 'lucide-react';
-import imageCompression from 'browser-image-compression'; // Import thư viện nén ảnh
+import imageCompression from 'browser-image-compression'; 
+
+// Danh sách các danh mục có thể chọn
+const AVAILABLE_CATEGORIES = [
+  { id: 'thbn', label: 'Tự hào Bắc Ninh' },
+  { id: 'combo', label: 'Combo tiết kiệm' },
+  { id: 'monle', label: 'Món lẻ' },
+  { id: 'quanho', label: 'Mâm lễ Quan họ' }
+];
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('overview'); 
@@ -22,7 +30,7 @@ export default function AdminDashboard() {
   
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSyncingCtv, setIsSyncingCtv] = useState(false);
-  const [isUploadingImage, setIsUploadingImage] = useState(false); // State quản lý việc up ảnh
+  const [isUploadingImage, setIsUploadingImage] = useState(false); 
 
   const [filter, setFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -32,9 +40,11 @@ export default function AdminDashboard() {
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState(null);
   
-  // Trạng thái Form sản phẩm
+  // State quản lý Form sản phẩm (Sử dụng mảng categories)
   const [productForm, setProductForm] = useState({ 
-    name: '', price: '', description: '', image: '', inStock: true, category: 'food', 
+    name: '', price: '', description: '', image: '', inStock: true, 
+    categories: ['monle'], 
+    customTag: '',
     variantsList: [] 
   });
 
@@ -45,24 +55,13 @@ export default function AdminDashboard() {
 
   const GOOGLE_SHEET_VIEW_URL = import.meta.env.VITE_GOOGLE_SHEET_VIEW_URL || "#";
 
-  // 1. TẢI ĐƠN HÀNG (CÓ PHÂN TRANG 30 ĐƠN)
   useEffect(() => {
-    const qOrders = query(
-      collection(db, 'orders'), 
-      orderBy('createdAt', 'desc'), 
-      limit(orderLimit)
-    );
-    
+    const qOrders = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(orderLimit));
     const unsubOrders = onSnapshot(qOrders, (snapshot) => {
       setOrders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      
-      if (snapshot.docs.length < orderLimit) {
-        setHasMoreOrders(false);
-      } else {
-        setHasMoreOrders(true);
-      }
+      if (snapshot.docs.length < orderLimit) setHasMoreOrders(false);
+      else setHasMoreOrders(true);
     });
-
     return () => unsubOrders();
   }, [orderLimit]); 
 
@@ -71,17 +70,13 @@ export default function AdminDashboard() {
       setProducts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setLoading(false);
     });
-
     const unsubCtvs = onSnapshot(collection(db, 'ctvs'), (snapshot) => {
       setCtvs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
-
     return () => { unsubProducts(); unsubCtvs(); };
   }, []);
   
-  const handleLoadMore = () => {
-    setOrderLimit(prevLimit => prevLimit + 30); 
-  };
+  const handleLoadMore = () => setOrderLimit(prevLimit => prevLimit + 30); 
   
   const handleUpdateStatus = async (order, newStatus) => {
     let reason = order.cancelReason || '';
@@ -90,21 +85,13 @@ export default function AdminDashboard() {
       if (input === null) return; 
       reason = input.trim() || 'Admin hủy đơn';
     }
-
     setIsSyncing(true);
     try {
       const response = await fetch('/api/update-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          orderId: order.orderId || order.id,
-          documentId: order.id, 
-          newStatus: newStatus,
-          cancelReason: reason,
-          isAdmin: true 
-        })
+        body: JSON.stringify({ orderId: order.orderId || order.id, documentId: order.id, newStatus: newStatus, cancelReason: reason, isAdmin: true })
       });
-
       const result = await response.json();
       if (result.success) toast.success('Cập nhật trạng thái thành công!');
       else toast.error(result.message || 'Lỗi cập nhật đơn hàng!');
@@ -132,93 +119,56 @@ export default function AdminDashboard() {
   const handleSyncCtvRevenue = async () => {
     setIsSyncingCtv(true);
     const toastId = toast.loading('Đang quét toàn bộ dữ liệu để tính toán...');
-    
     try {
       const q = query(collection(db, 'orders'), where('status', '==', 'done'));
       const snapshot = await getDocs(q);
-
       const stats = {};
       snapshot.forEach(docSnap => {
         const data = docSnap.data();
         const refName = (data.referrer || '').trim().toLowerCase();
-        
         if (refName) {
           if (!stats[refName]) stats[refName] = { count: 0, revenue: 0 };
           stats[refName].count += 1;
           stats[refName].revenue += (data.total || 0);
         }
       });
-
       const updatePromises = ctvs.map(ctv => {
         const ctvName = (ctv.name || '').trim().toLowerCase();
         const ctvStats = stats[ctvName] || { count: 0, revenue: 0 };
-
-        return updateDoc(doc(db, 'ctvs', ctv.id), {
-          successOrders: ctvStats.count,
-          totalRevenue: ctvStats.revenue,
-          lastSynced: serverTimestamp() 
-        });
+        return updateDoc(doc(db, 'ctvs', ctv.id), { successOrders: ctvStats.count, totalRevenue: ctvStats.revenue, lastSynced: serverTimestamp() });
       });
-
       await Promise.all(updatePromises);
       toast.success('Đã cập nhật doanh thu mới nhất cho tất cả CTV!', { id: toastId });
-      
-    } catch (error) {
-      console.error(error);
-      toast.error('Lỗi khi tính toán doanh thu!', { id: toastId });
-    } finally {
-      setIsSyncingCtv(false);
-    }
+    } catch (error) { toast.error('Lỗi khi tính toán doanh thu!', { id: toastId }); } 
+    finally { setIsSyncingCtv(false); }
   };
    
-  // ==========================================
-  // HÀM UPLOAD ẢNH (DÙNG CLOUDINARY) CHO ADMIN
-  // ==========================================
   const handleImageUpload = async (file, isVariant = false, variantIndex = null) => {
     if (!file) return;
-
     setIsUploadingImage(true);
     const toastId = toast.loading('Đang nén và tải ảnh lên...');
-
     try {
       const options = { maxSizeMB: 1, maxWidthOrHeight: 1920, useWebWorker: true };
       const compressedFile = await imageCompression(file, options);
-
       const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
       const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
-
       const formData = new FormData();
       formData.append('file', compressedFile);
       formData.append('upload_preset', uploadPreset);
-
-      const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
-        method: 'POST',
-        body: formData
-      });
-
+      const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, { method: 'POST', body: formData });
       if (!res.ok) throw new Error("Không thể tải ảnh lên Cloudinary");
-
       const cloudData = await res.json();
       const optimizedUrl = cloudData.secure_url.replace('/upload/', '/upload/f_auto,q_auto/');
 
-      if (isVariant && variantIndex !== null) {
-        handleVariantChange(variantIndex, 'image', optimizedUrl);
-      } else {
-        setProductForm(prev => ({ ...prev, image: optimizedUrl }));
-      }
-
+      if (isVariant && variantIndex !== null) handleVariantChange(variantIndex, 'image', optimizedUrl);
+      else setProductForm(prev => ({ ...prev, image: optimizedUrl }));
       toast.success('Tải ảnh thành công!', { id: toastId });
-    } catch (error) {
-      console.error(error);
-      toast.error('Lỗi khi tải ảnh lên. Hãy thử lại!', { id: toastId });
-    } finally {
-      setIsUploadingImage(false);
-    }
+    } catch (error) { toast.error('Lỗi khi tải ảnh lên. Hãy thử lại!', { id: toastId }); } 
+    finally { setIsUploadingImage(false); }
   };
 
   const handleAddVariantRow = () => setProductForm(prev => ({...prev, variantsList: [...prev.variantsList, { name: '', image: '', price: '' }]}));
   const handleRemoveVariantRow = (index) => setProductForm(prev => ({...prev, variantsList: prev.variantsList.filter((_, i) => i !== index)}));
-  
   const handleVariantChange = (index, field, value) => {
     const newList = [...productForm.variantsList]; 
     newList[index][field] = value;
@@ -229,6 +179,8 @@ export default function AdminDashboard() {
     e.preventDefault();
     if (!productForm.name || !productForm.price) return toast.error('Vui lòng nhập tên và giá gốc!');
     if (!productForm.image) return toast.error('Vui lòng tải lên ảnh sản phẩm!');
+    // Yêu cầu chọn ít nhất 1 danh mục
+    if (!productForm.categories || productForm.categories.length === 0) return toast.error('Vui lòng chọn ít nhất 1 danh mục!');
 
     const validVariants = productForm.variantsList.filter(v => v.name.trim() !== '');
     const productData = {
@@ -237,7 +189,8 @@ export default function AdminDashboard() {
       description: productForm.description, 
       image: productForm.image, 
       inStock: productForm.inStock, 
-      category: productForm.category, 
+      categories: productForm.categories, 
+      customTag: productForm.customTag?.trim() || '', 
       variants: validVariants.map(v => v.name.trim()), 
       variantImages: validVariants.map(v => v.image.trim()), 
       variantPrices: validVariants.map(v => Number(v.price) || Number(productForm.price)), 
@@ -257,7 +210,7 @@ export default function AdminDashboard() {
   };
 
   const resetForm = () => {
-    setProductForm({ name: '', price: '', description: '', image: '', inStock: true, category: 'food', variantsList: [] }); 
+    setProductForm({ name: '', price: '', description: '', image: '', inStock: true, categories: ['monle'], customTag: '', variantsList: [] }); 
     setIsEditing(false); setEditingId(null);
   };
 
@@ -284,9 +237,7 @@ export default function AdminDashboard() {
       </AnimatePresence>
 
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 border-b border-slate-200 pb-6 px-4 sm:px-0">
-        <div>
-          <h1 className="text-3xl font-heading font-extrabold text-slate-900 tracking-tight">Admin Dashboard</h1>
-        </div>
+        <div><h1 className="text-3xl font-heading font-extrabold text-slate-900 tracking-tight">Admin Dashboard</h1></div>
       </div>
 
       <div className="flex gap-2 p-1 bg-slate-200/50 rounded-2xl w-fit mx-4 sm:mx-0 overflow-x-auto max-w-full custom-scrollbar">
@@ -299,7 +250,6 @@ export default function AdminDashboard() {
 
       <AnimatePresence mode="wait">
         
-        {/* TAB TỔNG QUAN */}
         {activeTab === 'overview' && (
           <motion.div key="overview" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-6 px-4 sm:px-0">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -323,20 +273,14 @@ export default function AdminDashboard() {
           </motion.div>
         )}
 
-        {/* TAB CTV */}
         {activeTab === 'ctv' && (
           <motion.div key="ctv" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-6 px-4 sm:px-0">
             <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
              <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-4">
                   <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Award className="w-6 h-6 text-orange-500" /> Quản lý Cộng Tác Viên</h2>
-                  <button 
-                    onClick={handleSyncCtvRevenue} 
-                    disabled={isSyncingCtv}
-                    className="px-4 py-2 text-xs font-bold bg-green-100 hover:bg-green-200 text-green-700 rounded-lg transition-all flex items-center gap-2 disabled:opacity-50"
-                  >
-                    {isSyncingCtv ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                    Tính doanh thu mới nhất
+                  <button onClick={handleSyncCtvRevenue} disabled={isSyncingCtv} className="px-4 py-2 text-xs font-bold bg-green-100 hover:bg-green-200 text-green-700 rounded-lg transition-all flex items-center gap-2 disabled:opacity-50">
+                    {isSyncingCtv ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Tính doanh thu mới nhất
                   </button>
                 </div>
                 <p className="text-sm text-slate-500 mt-1">Gán Email Google của CTV để hệ thống tự nhận diện. Dữ liệu doanh thu chỉ thay đổi khi bấm nút tính.</p>
@@ -351,16 +295,9 @@ export default function AdminDashboard() {
             <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse min-w-[800px]">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-100 text-xs text-slate-500 uppercase font-bold">
-                    <th className="p-5">Thông tin CTV</th><th className="p-5 text-center">Đơn thành công</th><th className="p-5 text-right">Doanh thu</th><th className="p-5 text-center">Hành động</th>
-                    </tr>
-                  </thead>
+                  <thead><tr className="bg-slate-50 border-b border-slate-100 text-xs text-slate-500 uppercase font-bold"><th className="p-5">Thông tin CTV</th><th className="p-5 text-center">Đơn thành công</th><th className="p-5 text-right">Doanh thu</th><th className="p-5 text-center">Hành động</th></tr></thead>
                   <tbody className="divide-y divide-slate-50">
                       {ctvs.map(ctv => {
-                      const doneCount = ctv.successOrders || 0;
-                      const revenue = ctv.totalRevenue || 0;
-                      
                       return (
                         <tr key={ctv.id} className="hover:bg-slate-50/50 transition-colors">
                           <td className="p-5">
@@ -375,8 +312,8 @@ export default function AdminDashboard() {
                               <p className="text-orange-600 font-bold text-sm">Họ Tên: {ctv.name}</p>
                             )}
                           </td>
-                          <td className="p-5 text-center font-bold text-green-600">{doneCount}</td>
-                          <td className="p-5 text-right font-extrabold">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(revenue)}</td>
+                          <td className="p-5 text-center font-bold text-green-600">{ctv.successOrders || 0}</td>
+                          <td className="p-5 text-right font-extrabold">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(ctv.totalRevenue || 0)}</td>
                           <td className="p-5 text-center">
                             <div className="flex justify-center gap-2">
                               <button onClick={() => { setEditingCtvId(ctv.id); setEditCtvName(ctv.name); }} className="p-2 text-blue-600 bg-blue-50 rounded-lg"><Edit className="w-4 h-4"/></button>
@@ -471,19 +408,13 @@ export default function AdminDashboard() {
             </div>
             {hasMoreOrders && filter === 'all' && searchQuery === '' && (
               <div className="flex justify-center p-6 bg-slate-50/50 border-t border-slate-100">
-                <button 
-                  onClick={handleLoadMore} 
-                  className="px-6 py-3 bg-white border border-slate-200 hover:border-green-500 text-slate-700 hover:text-green-600 font-bold rounded-xl transition-all flex items-center gap-2 shadow-sm"
-                >
+                <button onClick={handleLoadMore} className="px-6 py-3 bg-white border border-slate-200 hover:border-green-500 text-slate-700 hover:text-green-600 font-bold rounded-xl transition-all flex items-center gap-2 shadow-sm">
                   Tải thêm 30 đơn cũ hơn
                 </button>
               </div>
             )}
-            
             {!hasMoreOrders && orders.length > 0 && filter === 'all' && searchQuery === '' && (
-              <div className="text-center p-6 text-sm font-semibold text-slate-400 bg-slate-50/50 border-t border-slate-100">
-                Đã hiển thị toàn bộ lịch sử đơn hàng.
-              </div>
+              <div className="text-center p-6 text-sm font-semibold text-slate-400 bg-slate-50/50 border-t border-slate-100">Đã hiển thị toàn bộ lịch sử đơn hàng.</div>
             )} 
           </motion.div>
         )}
@@ -492,6 +423,7 @@ export default function AdminDashboard() {
         {activeTab === 'products' && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="grid grid-cols-1 lg:grid-cols-3 gap-8 px-4 sm:px-0">
             
+            {/* FORM THÊM/SỬA SẢN PHẨM */}
             <div className="lg:col-span-1 bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 h-fit sticky top-24">
               <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
                 {isEditing ? <Edit className="w-5 h-5 text-blue-500" /> : <Plus className="w-5 h-5 text-green-500" />}
@@ -508,30 +440,44 @@ export default function AdminDashboard() {
                   </label>
                 </div>
 
-                {/* KHU VỰC CHỌN PHÂN LOẠI */}
+                {/* KHU VỰC CHỌN NHIỀU DANH MỤC (CHECKBOX) */}
                 <div>
-                  <select 
-                    value={productForm.category} 
-                    onChange={e => setProductForm({...productForm, category: e.target.value})}
-                    className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-green-500 font-bold text-slate-700 appearance-none"
-                  >
-                    <option value="food">🍕 Phân loại: Đồ ăn</option>
-                    <option value="drink">🥤 Phân loại: Đồ uống</option>
-                    <option value="combo">🎁 Phân loại: Combo</option>
-                    <option value="accessory">🎗️ Phân loại: Phụ kiện</option>
-                  </select>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Chọn danh mục (Có thể chọn nhiều) *</label>
+                  <div className="flex flex-wrap gap-2">
+                    {AVAILABLE_CATEGORIES.map(cat => (
+                      <label key={cat.id} className={`flex items-center gap-2 p-2 border-2 rounded-xl cursor-pointer transition-all ${productForm.categories?.includes(cat.id) ? 'border-green-500 bg-green-50' : 'border-slate-200 bg-slate-50 hover:border-green-200'}`}>
+                        <input
+                          type="checkbox"
+                          className="hidden"
+                          checked={productForm.categories?.includes(cat.id)}
+                          onChange={(e) => {
+                            const newCats = e.target.checked 
+                              ? [...(productForm.categories || []), cat.id] 
+                              : (productForm.categories || []).filter(c => c !== cat.id);
+                            setProductForm({ ...productForm, categories: newCats });
+                          }}
+                        />
+                        <div className={`w-4 h-4 rounded-md flex items-center justify-center border ${productForm.categories?.includes(cat.id) ? 'bg-green-500 border-green-500' : 'bg-white border-slate-300'}`}>
+                          {productForm.categories?.includes(cat.id) && <Check className="w-3 h-3 text-white" />}
+                        </div>
+                        <span className={`text-xs font-bold ${productForm.categories?.includes(cat.id) ? 'text-green-700' : 'text-slate-600'}`}>{cat.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Nhãn sản phẩm (VD: Combo Hot, Mới, v.v..)</label>
+                  <input type="text" value={productForm.customTag} onChange={e => setProductForm({...productForm, customTag: e.target.value})} className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold" placeholder="Để trống nếu không cần tag..." />
                 </div>
 
                 <textarea value={productForm.description} onChange={e => setProductForm({...productForm, description: e.target.value})} className="w-full p-3 bg-slate-50 border rounded-2xl outline-none min-h-[80px]" placeholder="Mô tả..." />
                 
-                {/* UPLOAD ẢNH CHÍNH BẰNG CLOUDINARY */}
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-2">Ảnh sản phẩm chính *</label>
                   <div className="flex items-center gap-3">
                     {productForm.image && (
-                      <div className="w-16 h-16 rounded-xl overflow-hidden border-2 border-green-500 shrink-0">
-                        <img src={productForm.image} alt="Preview" className="w-full h-full object-cover" />
-                      </div>
+                      <div className="w-16 h-16 rounded-xl overflow-hidden border-2 border-green-500 shrink-0"><img src={productForm.image} alt="Preview" className="w-full h-full object-cover" /></div>
                     )}
                     <label className="flex-1 flex flex-col items-center justify-center h-16 border-2 border-slate-300 border-dashed rounded-xl cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors">
                       <div className="flex flex-col items-center justify-center">
@@ -543,7 +489,6 @@ export default function AdminDashboard() {
                   </div>
                 </div>
                 
-                {/* Khu vực Nhập Phân loại/Vị CÓ UPLOAD ẢNH RIÊNG */}
                 <div className="p-4 bg-green-50/50 rounded-2xl border border-green-100 space-y-3">
                   <div className="flex justify-between items-center">
                     <p className="text-xs font-extrabold text-green-700 uppercase">Phân loại / Vị</p>
@@ -561,11 +506,7 @@ export default function AdminDashboard() {
                             <input type="file" accept="image/*" className="hidden" disabled={isUploadingImage} onChange={(e) => handleImageUpload(e.target.files[0], true, index)} />
                           </label>
                         </div>
-                        {item.image && (
-                          <div className="mt-1">
-                            <img src={item.image} alt="Variant preview" className="h-10 w-10 object-cover rounded-lg border border-slate-200" />
-                          </div>
-                        )}
+                        {item.image && <div className="mt-1"><img src={item.image} alt="Variant preview" className="h-10 w-10 object-cover rounded-lg border border-slate-200" /></div>}
                       </div>
                       <button type="button" onClick={() => handleRemoveVariantRow(index)} className="p-2 text-red-400"><Trash2 className="w-4 h-4" /></button>
                     </div>
@@ -581,46 +522,60 @@ export default function AdminDashboard() {
               </form>
             </div>
 
+            {/* DANH SÁCH SẢN PHẨM HIỆN CÓ */}
             <div className="lg:col-span-2 space-y-4">
               <h2 className="font-bold text-slate-800 text-lg">Menu hiện tại ({products.length})</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {products.map(product => (
-                  <div key={product.id} className="bg-white p-4 rounded-[2rem] shadow-sm border border-slate-100 flex gap-4 group">
-                    
-                    {/* KHUNG ẢNH VỚI HUY HIỆU THEO CATEGORY */}
-                    <div className="w-24 h-24 shrink-0 relative rounded-2xl overflow-hidden bg-slate-50 border border-slate-100 aspect-square">
-                      <img src={product.image} className="w-full h-full object-cover" alt={product.name} />
-                      
-                      <span className={`absolute top-1 left-1 text-[9px] font-black px-1.5 py-0.5 rounded-md shadow-sm z-10 text-white uppercase tracking-wider ${
-                        product.category === 'drink' ? 'bg-blue-500' :
-                        product.category === 'combo' ? 'bg-purple-500' : 
-                        product.category === 'accessory' ? 'bg-pink-500' : 
-                        'bg-orange-500'
-                      }`}>
-                        {product.category === 'drink' ? 'Đồ uống' : product.category === 'combo' ? 'Combo' : product.category === 'accessory' ? 'Phụ kiện' : 'Đồ ăn'}
-                      </span>
-                    </div>
+                {products.map(product => {
+                  const productCategories = product.categories || (product.category ? [product.category] : []);
 
-                    <div className="flex-1 flex flex-col">
-                      <h3 className="font-bold text-slate-800 line-clamp-1">{product.name}</h3>
-                      <p className="text-green-600 font-extrabold text-lg">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(product.price)}</p>
-                      <p className="text-xs">
-                        <span className={`font-bold ${product.inStock ? 'text-green-600' : 'text-red-500'}`}>{product.inStock ? '• Còn hàng' : '• Hết hàng'}</span> 
-                        <span className="text-slate-400 ml-2">| Đã bán: {product.sold || 0}</span>
-                      </p>
-                      <div className="flex gap-2 mt-auto pt-2">
-                        <button onClick={() => {
-                            const loadedVariantsList = (product.variants || []).map((v, idx) => ({ 
-                              name: v, image: (product.variantImages && product.variantImages[idx]) || '', price: (product.variantPrices && product.variantPrices[idx]) || product.price
-                            }));
-                            setProductForm({ ...product, category: product.category || (product.isCombo ? 'combo' : 'food'), variantsList: loadedVariantsList });
-                            setIsEditing(true); setEditingId(product.id);
-                          }} className="flex-1 bg-blue-50 text-blue-600 text-xs font-bold py-2 rounded-xl">Sửa</button>
-                        <button onClick={() => { if(window.confirm('Xóa món này?')) deleteDoc(doc(db, 'products', product.id)) }} className="px-3 bg-red-50 text-red-400 rounded-xl"><Trash2 className="w-4 h-4"/></button>
+                  return (
+                    <div key={product.id} className="bg-white p-4 rounded-[2rem] shadow-sm border border-slate-100 flex gap-4 group">
+                      <div className="w-24 h-24 shrink-0 relative rounded-2xl overflow-hidden bg-slate-50 border border-slate-100 aspect-square">
+                        <img src={product.image} className="w-full h-full object-cover" alt={product.name} />
+                        
+                        {/* Hiển thị nhiều nhãn danh mục xếp chồng lên nhau */}
+                        <div className="absolute top-1 left-1 flex flex-col gap-1 z-10">
+                          {productCategories.map(cat => (
+                            <span key={cat} className={`text-[9px] font-black px-1.5 py-0.5 rounded-md shadow-sm text-white uppercase tracking-wider ${
+                              cat === 'thbn' ? 'bg-blue-500' :
+                              cat === 'combo' ? 'bg-purple-500' : 
+                              cat === 'quanho' ? 'bg-pink-500' : 
+                              'bg-orange-500'
+                            }`}>
+                              {cat === 'thbn' ? 'Bắc Ninh' : cat === 'combo' ? 'Combo' : cat === 'quanho' ? 'Quan họ' : 'Món lẻ'}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex-1 flex flex-col">
+                        <h3 className="font-bold text-slate-800 line-clamp-1">{product.name}</h3>
+                        {product.customTag && <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 w-fit rounded mt-0.5 uppercase">{product.customTag}</span>}
+                        <p className="text-green-600 font-extrabold text-lg mt-1">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(product.price)}</p>
+                        <p className="text-xs">
+                          <span className={`font-bold ${product.inStock ? 'text-green-600' : 'text-red-500'}`}>{product.inStock ? '• Còn hàng' : '• Hết hàng'}</span> 
+                          <span className="text-slate-400 ml-2">| Đã bán: {product.sold || 0}</span>
+                        </p>
+                        <div className="flex gap-2 mt-auto pt-2">
+                          <button onClick={() => {
+                              const loadedVariantsList = (product.variants || []).map((v, idx) => ({ 
+                                name: v, image: (product.variantImages && product.variantImages[idx]) || '', price: (product.variantPrices && product.variantPrices[idx]) || product.price
+                              }));
+                              setProductForm({ 
+                                ...product, 
+                                categories: productCategories, 
+                                customTag: product.customTag || '',
+                                variantsList: loadedVariantsList 
+                              });
+                              setIsEditing(true); setEditingId(product.id);
+                            }} className="flex-1 bg-blue-50 text-blue-600 text-xs font-bold py-2 rounded-xl">Sửa</button>
+                          <button onClick={() => { if(window.confirm('Xóa món này?')) deleteDoc(doc(db, 'products', product.id)) }} className="px-3 bg-red-50 text-red-400 rounded-xl"><Trash2 className="w-4 h-4"/></button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </motion.div>
