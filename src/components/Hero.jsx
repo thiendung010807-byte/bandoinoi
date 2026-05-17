@@ -29,32 +29,32 @@ export default function Hero({ totalRaised = 0, totalOrders = 0, onScrollDown })
     {
       icon: <CalendarDays className="w-5 h-5 text-green-600" />,
       bg: "bg-green-50",
-      title: "Chiến dịch là gì?",
-      content: "Mùa Hè Xanh 2026 là chương trình tình nguyện thường niên do Đoàn Thanh niên tổ chức, diễn ra từ tháng 6 đến tháng 8 năm 2026. Hàng trăm tình nguyện viên sẽ lên đường đến các vùng sâu, vùng xa để hỗ trợ cộng đồng."
+      title: "Chiến dịch Mùa Hè Xanh là gì?",
+      content: "Thực hiện theo Kế hoạch của BCH Đoàn Thành phố Hà Nội và chỉ đạo của Hội Sinh viên Việt Nam Đại học Kinh tế Quốc dân, Đội SVTN Đồng hương Bắc Ninh tổ chức chiến dịch Mùa Hè Xanh 2026 nhằm phát huy tinh thần tương thân tương ái, khơi dậy và phát huy truyền thống "Uống nước nhớ nguồn, hướng về quê hương. "
     },
     {
       icon: <MapPin className="w-5 h-5 text-teal-600" />,
       bg: "bg-teal-50",
-      title: "Địa điểm hoạt động",
-      content: "Các tỉnh vùng cao phía Bắc như Hà Giang, Cao Bằng, Lào Cai — nơi trẻ em vẫn còn thiếu thốn sách vở, quần áo và cơ sở hạ tầng giáo dục cơ bản."
+      title: "Địa điểm tổ chức",
+      content: "Địa bàn Xã Kiên Lao, tỉnh Bắc Ninh (Bắc Giang cũ) "
     },
     {
       icon: <BookOpen className="w-5 h-5 text-blue-600" />,
       bg: "bg-blue-50",
       title: "Quỹ dùng để làm gì?",
-      content: "100% lợi nhuận từ các sản phẩm được dùng để mua sách giáo khoa, xây dựng tủ sách thư viện mini và trang bị đồ dùng học tập cho các điểm trường còn khó khăn."
+      content: "100 % lợi nhuận từ quỹ sẽ được dùng để thực hiện các công trình Thanh niên tại Xã Kiên Lao; hỗ trợ bà con có hoàn cảnh khó khăn, trẻ em nghèo vượt khó; tổ chức sinh hoạt hè cho các em thiếu nhi; tôn vinh nét đẹp của Văn hóa quê hương Kinh Bắc"
     },
     {
       icon: <Shirt className="w-5 h-5 text-orange-600" />,
       bg: "bg-orange-50",
-      title: "Áo ấm cho trẻ em",
-      content: "Một phần quỹ sẽ được dùng để may và tặng áo ấm cho trẻ em vùng cao trước mùa đông, giúp các em có thể đến trường ngay cả trong những ngày lạnh giá nhất."
+      title: "Sản phẩm gây quỹ",
+      content: "Gồm Đặc sản Bắc Ninh (Bánh đa ngọt, Nem Bùi), đồ ăn vặt và đồ lưu niệm (Móc khóa NEU, cờ Tổ quốc)."
     },
     {
       icon: <Users className="w-5 h-5 text-purple-600" />,
       bg: "bg-purple-50",
-      title: "Ai tổ chức?",
-      content: "Chiến dịch được tổ chức bởi đội ngũ tình nguyện viên sinh viên nhiệt huyết, dưới sự hướng dẫn của Ban chấp hành Đoàn trường. Mọi hoạt động đều được minh bạch và công khai."
+      title: "Đơn vị tổ chức",
+      content: "Chiến dịch Mùa Hè Xanh 2026 tại xã Kiên Lao được thực hiện bởi: Đội Sinh viên Tình nguyện Đồng hương Bắc Ninh - trực thuộc Hội Sinh viên Đại học Kinh tế Quốc dân (NEU)."
     }
   ];
 
@@ -77,19 +77,19 @@ export default function Hero({ totalRaised = 0, totalOrders = 0, onScrollDown })
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-3 w-3 bg-green-600"></span>
             </span>
-            <span className="text-sm font-semibold text-slate-700 tracking-wide uppercase">Chiến dịch đang diễn ra</span>
+            <span className="text-sm font-semibold text-slate-700 tracking-wide uppercase">Chiến dịch sắp diễn ra</span>
           </motion.div>
 
           {/* Tiêu đề */}
           <motion.h1 variants={item} className="text-5xl md:text-7xl font-heading font-extrabold text-slate-900 tracking-tight leading-tight mb-6">
-            Chuyến đi tuổi trẻ <br className="hidden md:block" />
+            Cùng BNC <br className="hidden md:block" />
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-green-600 to-emerald-500">
               Gửi gắm yêu thương
             </span>
           </motion.h1>
 
           <motion.p variants={item} className="text-lg md:text-xl text-slate-600 mb-10 max-w-2xl mx-auto leading-relaxed">
-            Đồng hành cùng Mùa Hè Xanh 2026. Mỗi sản phẩm bạn ủng hộ là một viên gạch xây dựng tủ sách và áo ấm cho trẻ em vùng cao.
+            Đồng hành cùng Chiến dịch Mùa Hè Xanh 2026 của Đội Sinh viên Tình nguyện Đồng hương Bắc Ninh (BNC). Mỗi sản phẩm bạn ủng hộ không chỉ là một món đồ nhỏ, mà còn là một phần yêu thương được gửi trao cho bà con có hoàn cảnh khó khăn!!
           </motion.p>
 
           {/* Các Nút */}
@@ -167,7 +167,7 @@ export default function Hero({ totalRaised = 0, totalOrders = 0, onScrollDown })
               {/* CTA cố định ở đáy modal */}
               <div className="shrink-0 px-6 pt-4 pb-8 border-t border-slate-100 bg-gradient-to-br from-green-50 to-emerald-50" style={{ paddingBottom: 'max(2rem, env(safe-area-inset-bottom, 2rem))' }}>
                 <p className="text-sm text-slate-600 mb-3 leading-relaxed text-center">
-                  Mỗi đơn hàng của bạn là một hành động yêu thương thực sự. Cùng nhau, chúng ta có thể tạo ra sự thay đổi! 💚
+                  Mỗi sản phẩm bạn ủng hộ không chỉ là một món đồ nhỏ, mà còn là một phần yêu thương được gửi trao cho bà con nhân dân Xã Kiên Lao. Cùng BNC làm nên một mùa hè thật rực rỡ và ý nghĩa nhé! 💚
                 </p>
                 <button
                   onClick={() => { setIsInfoOpen(false); onScrollDown?.(); }}
