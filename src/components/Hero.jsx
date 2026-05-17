@@ -30,7 +30,8 @@ export default function Hero({ totalRaised = 0, totalOrders = 0, onScrollDown })
       icon: <CalendarDays className="w-5 h-5 text-green-600" />,
       bg: "bg-green-50",
       title: "Chiến dịch Mùa Hè Xanh là gì?",
-      content: "Thực hiện theo Kế hoạch của BCH Đoàn Thành phố Hà Nội và chỉ đạo của Hội Sinh viên Việt Nam Đại học Kinh tế Quốc dân, Đội SVTN Đồng hương Bắc Ninh tổ chức chiến dịch Mùa Hè Xanh 2026 nhằm phát huy tinh thần tương thân tương ái, khơi dậy và phát huy truyền thống "Uống nước nhớ nguồn, hướng về quê hương. "
+      // Đã sửa dấu ngoặc kép bên ngoài thành dấu nháy đơn '
+      content: 'Thực hiện theo Kế hoạch của BCH Đoàn Thành phố Hà Nội và chỉ đạo của Hội Sinh viên Việt Nam Đại học Kinh tế Quốc dân, Đội SVTN Đồng hương Bắc Ninh tổ chức chiến dịch Mùa Hè Xanh 2026 nhằm phát huy tinh thần tương thân tương ái, khơi dậy và phát huy truyền thống "Uống nước nhớ nguồn, hướng về quê hương."'
     },
     {
       icon: <MapPin className="w-5 h-5 text-teal-600" />,
@@ -57,7 +58,7 @@ export default function Hero({ totalRaised = 0, totalOrders = 0, onScrollDown })
       content: "Chiến dịch Mùa Hè Xanh 2026 tại xã Kiên Lao được thực hiện bởi: Đội Sinh viên Tình nguyện Đồng hương Bắc Ninh - trực thuộc Hội Sinh viên Đại học Kinh tế Quốc dân (NEU)."
     }
   ];
-
+  
   return (
     <>
       <div className="relative min-h-[85vh] flex items-center justify-center overflow-hidden bg-slate-50 rounded-3xl mx-4 mt-4 shadow-soft">
