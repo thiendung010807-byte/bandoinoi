@@ -23,6 +23,13 @@ export default function FloatingSupport() {
       color: 'bg-indigo-500', 
       link: 'https://m.me/doisinhvientinhnguyendonghuongbacninh' 
     },
+    { 
+      id: 'hotline', 
+      name: 'Hotline', 
+      icon: Phone, 
+      color: 'bg-green-500', 
+      link: 'tel:0989917081' 
+    },
   ];
 
   return (
