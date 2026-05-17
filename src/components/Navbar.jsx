@@ -13,12 +13,18 @@ export default function Navbar() {
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16 items-center gap-2">
           {/* Logo & Brand */}
-          <Link to="/" className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            <Heart className="text-green-600 w-7 h-7 sm:w-8 sm:h-8 fill-current shrink-0" />
-            <span className="font-bold text-lg sm:text-xl text-gray-900 tracking-tight truncate max-w-[140px] sm:max-w-none">
-              Mùa Hè Xanh <span className="text-green-600 hidden xs:inline">2026</span>
-            </span>
-          </Link>
+        
+{/* Logo & Brand */}
+<Link to="/" className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+  <img 
+    src="/logo.png" 
+    alt="Logo BNC" 
+    className="w-7 h-7 sm:w-8 sm:h-8 shrink-0 object-contain"
+  />
+  <span className="font-bold text-lg sm:text-xl text-gray-900 tracking-tight truncate max-w-[140px] sm:max-w-none">
+    Mùa Hè Xanh <span className="text-green-600 hidden xs:inline">2026</span>
+  </span>
+</Link>
 
           {/* Right Actions */}
           <div className="flex items-center gap-1 sm:gap-3 shrink-0">

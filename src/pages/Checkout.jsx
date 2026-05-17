@@ -135,7 +135,7 @@ export default function Checkout() {
 
       // XỬ LÝ DỮ LIỆU ĐỂ GỬI LÊN VERCEL
       const shipFeeNote = data.addressType === 'NEU' ? 'Miễn phí' : '3k/1km';
-      const deliveryAddress = data.addressType === 'NEU' ? 'Bàn truyền thống (NEU)' : data.customAddress;
+      const deliveryAddress = data.addressType === 'NEU' ? 'Bàn Truyền thông (NEU)' : data.customAddress;
 
       const cartItemsToSend = items.map(item => ({
         productId: item.id || item.productId,

@@ -1,3 +1,5 @@
+import defaultTheme from 'tailwindcss/defaultTheme';
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [
@@ -5,6 +7,11 @@ export default {
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
+    // Thêm block screens ở ngay trong theme (không để trong extend)
+    screens: {
+      'xs': '480px',
+      ...defaultTheme.screens,
+    },
     extend: {
       colors: {
         brand: {
