@@ -12,6 +12,7 @@ import {
   ExternalLink, Users, Award, Check, Loader2, UploadCloud
 } from 'lucide-react';
 import imageCompression from 'browser-image-compression'; 
+import { useAuth } from '../contexts/AuthContext'; // Thêm import này để lấy email admin đang thao tác
 
 // Danh sách các danh mục có thể chọn
 const AVAILABLE_CATEGORIES = [
@@ -22,6 +23,8 @@ const AVAILABLE_CATEGORIES = [
 ];
 
 export default function AdminDashboard() {
+  const { currentUser } = useAuth(); // Lấy thông tin user hiện tại
+  
   const [activeTab, setActiveTab] = useState('overview'); 
   const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState([]);
@@ -55,6 +58,22 @@ export default function AdminDashboard() {
 
   const GOOGLE_SHEET_VIEW_URL = import.meta.env.VITE_GOOGLE_SHEET_VIEW_URL || "#";
 
+  // ==================================================
+  // HÀM GHI LOG ÂM THẦM 
+  // ==================================================
+  const logAction = async (actionName, detailsObj) => {
+    try {
+      await addDoc(collection(db, 'admin_logs'), {
+        adminEmail: currentUser?.email || 'unknown_admin',
+        action: actionName,
+        details: detailsObj,
+        timestamp: serverTimestamp()
+      });
+    } catch (error) {
+      console.error("Lỗi ghi log âm thầm:", error);
+    }
+  };
+
   useEffect(() => {
     const qOrders = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(orderLimit));
     const unsubOrders = onSnapshot(qOrders, (snapshot) => {
@@ -76,7 +95,10 @@ export default function AdminDashboard() {
     return () => { unsubProducts(); unsubCtvs(); };
   }, []);
   
-  const handleLoadMore = () => setOrderLimit(prevLimit => prevLimit + 30); 
+  const handleLoadMore = () => {
+    setOrderLimit(prevLimit => prevLimit + 30);
+    // logAction('[TÌM KIẾM] Tải thêm đơn hàng cũ', { newLimit: orderLimit + 30 }); 
+  }; 
   
   const handleUpdateStatus = async (order, newStatus) => {
     let reason = order.cancelReason || '';
@@ -90,11 +112,22 @@ export default function AdminDashboard() {
       const response = await fetch('/api/update-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId: order.orderId || order.id, documentId: order.id, newStatus: newStatus, cancelReason: reason, isAdmin: true })
+        body: JSON.stringify({ 
+          orderId: order.orderId || order.id, 
+          documentId: order.id, 
+          newStatus: newStatus, 
+          cancelReason: reason, 
+          isAdmin: true,
+          adminEmail: currentUser?.email // Truyền email admin lên serverless function để ghi log bên Backend
+        })
       });
       const result = await response.json();
-      if (result.success) toast.success('Cập nhật trạng thái thành công!');
-      else toast.error(result.message || 'Lỗi cập nhật đơn hàng!');
+      if (result.success) {
+        toast.success('Cập nhật trạng thái thành công!');
+        // Đã chuyển phần log xử lý đơn sang Backend (api/update-order.js) cho chuẩn quy trình
+      } else {
+        toast.error(result.message || 'Lỗi cập nhật đơn hàng!');
+      }
     } catch (error) { toast.error('Mất kết nối với máy chủ!'); } 
     finally { setIsSyncing(false); }
   };
@@ -104,6 +137,10 @@ export default function AdminDashboard() {
     if (!newCtvEmail.trim() || !newCtvName.trim()) return;
     try {
       await addDoc(collection(db, 'ctvs'), { email: newCtvEmail.trim().toLowerCase(), name: newCtvName.trim(), createdAt: serverTimestamp() });
+      
+      // Ghi log Thêm CTV
+      logAction('[CTV] Thêm mới', { email: newCtvEmail.trim(), name: newCtvName.trim() });
+      
       setNewCtvEmail(''); setNewCtvName(''); toast.success('Đã thêm CTV!');
     } catch (error) { toast.error('Lỗi thêm CTV!'); }
   };
@@ -112,6 +149,10 @@ export default function AdminDashboard() {
     if (!editCtvName.trim()) return;
     try {
       await updateDoc(doc(db, 'ctvs', ctvId), { name: editCtvName.trim() });
+      
+      // Ghi log Đổi tên CTV
+      logAction('[CTV] Đổi tên', { ctvId: ctvId, newName: editCtvName.trim() });
+      
       setEditingCtvId(null); toast.success('Đã cập nhật tên CTV!');
     } catch (error) { toast.error('Lỗi cập nhật!'); }
   };
@@ -138,6 +179,8 @@ export default function AdminDashboard() {
         return updateDoc(doc(db, 'ctvs', ctv.id), { successOrders: ctvStats.count, totalRevenue: ctvStats.revenue, lastSynced: serverTimestamp() });
       });
       await Promise.all(updatePromises);
+            // logAction('[HỆ THỐNG] Tính lại doanh thu CTV', { totalCtvsUpdated: ctvs.length });
+      
       toast.success('Đã cập nhật doanh thu mới nhất cho tất cả CTV!', { id: toastId });
     } catch (error) { toast.error('Lỗi khi tính toán doanh thu!', { id: toastId }); } 
     finally { setIsSyncingCtv(false); }
@@ -162,6 +205,8 @@ export default function AdminDashboard() {
 
       if (isVariant && variantIndex !== null) handleVariantChange(variantIndex, 'image', optimizedUrl);
       else setProductForm(prev => ({ ...prev, image: optimizedUrl }));
+      logAction('[ẢNH] Tải lên Cloudinary thành công', { url: optimizedUrl, isVariant });
+      
       toast.success('Tải ảnh thành công!', { id: toastId });
     } catch (error) { toast.error('Lỗi khi tải ảnh lên. Hãy thử lại!', { id: toastId }); } 
     finally { setIsUploadingImage(false); }
@@ -200,9 +245,17 @@ export default function AdminDashboard() {
     try {
       if (isEditing) { 
         await updateDoc(doc(db, 'products', editingId), productData); 
+        
+        // Ghi log Sửa sản phẩm
+        logAction('[SẢN PHẨM] Cập nhật', { productId: editingId, name: productData.name, price: productData.price, inStock: productData.inStock });
+        
         toast.success('Cập nhật thành công!'); 
       } else { 
         await addDoc(collection(db, 'products'), { ...productData, sold: 0 }); 
+        
+        // Ghi log Thêm sản phẩm
+        logAction('[SẢN PHẨM] Thêm mới', { name: productData.name, price: productData.price });
+        
         toast.success('Đã thêm món mới!'); 
       }
       resetForm();
@@ -317,7 +370,13 @@ export default function AdminDashboard() {
                           <td className="p-5 text-center">
                             <div className="flex justify-center gap-2">
                               <button onClick={() => { setEditingCtvId(ctv.id); setEditCtvName(ctv.name); }} className="p-2 text-blue-600 bg-blue-50 rounded-lg"><Edit className="w-4 h-4"/></button>
-                              <button onClick={() => { if(window.confirm('Xóa CTV này?')) deleteDoc(doc(db, 'ctvs', ctv.id)) }} className="p-2 text-red-600 bg-red-50 rounded-lg"><Trash2 className="w-4 h-4"/></button>
+                              <button onClick={async () => { 
+                                if(window.confirm('Xóa CTV này?')) {
+                                  await deleteDoc(doc(db, 'ctvs', ctv.id));
+                                  // Ghi log Xóa CTV
+                                  logAction('[CTV] Xóa', { ctvId: ctv.id, name: ctv.name, email: ctv.email });
+                                }
+                              }} className="p-2 text-red-600 bg-red-50 rounded-lg"><Trash2 className="w-4 h-4"/></button>
                             </div>
                           </td>
                         </tr>
@@ -570,7 +629,13 @@ export default function AdminDashboard() {
                               });
                               setIsEditing(true); setEditingId(product.id);
                             }} className="flex-1 bg-blue-50 text-blue-600 text-xs font-bold py-2 rounded-xl">Sửa</button>
-                          <button onClick={() => { if(window.confirm('Xóa món này?')) deleteDoc(doc(db, 'products', product.id)) }} className="px-3 bg-red-50 text-red-400 rounded-xl"><Trash2 className="w-4 h-4"/></button>
+                          <button onClick={async () => { 
+                            if(window.confirm('Xóa món này?')) {
+                              await deleteDoc(doc(db, 'products', product.id));
+                              // Ghi log Xóa Sản phẩm
+                              logAction('[SẢN PHẨM] Xóa', { productId: product.id, productName: product.name });
+                            }
+                          }} className="px-3 bg-red-50 text-red-400 rounded-xl"><Trash2 className="w-4 h-4"/></button>
                         </div>
                       </div>
                     </div>
