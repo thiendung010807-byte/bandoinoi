@@ -70,7 +70,8 @@ export default function AdminDashboard() {
 
   const [filter, setFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [orderLimit, setOrderLimit] = useState(30);
+  const [orderLimit, setOrderLimit] = useState(50); // 30 chỉnh lên 50
+  const [sortBy, setSortBy] = useState('createdAt'); // Thêm state quản lý sắp xếp
   const [hasMoreOrders, setHasMoreOrders] = useState(true);
   
   const [isEditing, setIsEditing] = useState(false);
@@ -107,15 +108,21 @@ export default function AdminDashboard() {
     }
   };
 
-  useEffect(() => {
-    const qOrders = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(orderLimit));
+useEffect(() => {
+    let qOrders;
+    if (sortBy === 'createdAt') {
+      qOrders = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(orderLimit));
+    } else {
+      qOrders = query(collection(db, 'orders'), orderBy('deliveryTime', 'desc'), limit(orderLimit));
+    }
+    
     const unsubOrders = onSnapshot(qOrders, (snapshot) => {
       setOrders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       if (snapshot.docs.length < orderLimit) setHasMoreOrders(false);
       else setHasMoreOrders(true);
     });
     return () => unsubOrders();
-  }, [orderLimit]); 
+  }, [orderLimit, sortBy]);
 
   useEffect(() => {
     const unsubProducts = onSnapshot(collection(db, 'products'), (snapshot) => {
@@ -129,8 +136,8 @@ export default function AdminDashboard() {
   }, []);
   
   const handleLoadMore = () => {
-    setOrderLimit(prevLimit => prevLimit + 30);
-    // logAction('[TÌM KIẾM] Tải thêm đơn hàng cũ', { newLimit: orderLimit + 30 }); 
+    setOrderLimit(prevLimit => prevLimit + 50);
+    logAction('[TÌM KIẾM] Tải thêm đơn hàng cũ', { newLimit: orderLimit + 50 }); 
   }; 
   
   const handleUpdateStatus = async (order, newStatus) => {
@@ -430,7 +437,21 @@ export default function AdminDashboard() {
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                 <input type="text" placeholder="Tìm tên, SĐT, mã đơn, CTV..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-green-500 transition-all text-sm" />
               </div>
-              <div className="flex gap-3 w-full lg:w-auto">
+<div className="flex gap-3 w-full lg:w-auto">
+                {/* BỘ LỌC SẮP XẾP */}
+                <select 
+                  value={sortBy} 
+                  onChange={(e) => {
+                    setSortBy(e.target.value);
+                    setOrderLimit(100); 
+                  }} 
+                  className="flex-1 lg:w-48 p-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-green-500 font-medium text-sm"
+                >
+                  <option value="createdAt">Mới đặt nhất (Mặc định)</option>
+                  <option value="deliveryTime">Giờ giao muộn nhất</option>
+                </select>
+
+                {/* BỘ LỌC TRẠNG THÁI */}
                 <select value={filter} onChange={(e) => setFilter(e.target.value)} className="flex-1 lg:w-48 p-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-green-500 font-medium text-sm">
                   <option value="all">Tất cả trạng thái</option>
                   <option value="pending">Chờ xác nhận</option>
@@ -522,7 +543,7 @@ export default function AdminDashboard() {
             {hasMoreOrders && filter === 'all' && searchQuery === '' && (
               <div className="flex justify-center p-6 bg-slate-50/50 border-t border-slate-100">
                 <button onClick={handleLoadMore} className="px-6 py-3 bg-white border border-slate-200 hover:border-green-500 text-slate-700 hover:text-green-600 font-bold rounded-xl transition-all flex items-center gap-2 shadow-sm">
-                  Tải thêm 30 đơn cũ hơn
+                  Tải thêm 50 đơn cũ hơn
                 </button>
               </div>
             )}
