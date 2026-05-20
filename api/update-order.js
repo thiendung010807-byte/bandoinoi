@@ -23,7 +23,8 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ message: 'Method Not Allowed' });
 
   try {
-    const { orderId, documentId, newStatus, cancelReason, userId, isAdmin } = req.body;
+    // ĐÃ THÊM: Lấy thêm adminEmail từ req.body được gửi từ AdminDashboard
+    const { orderId, documentId, newStatus, cancelReason, userId, isAdmin, adminEmail } = req.body;
 
     // Lấy thông tin đơn hàng hiện tại
     const orderRef = db.collection('orders').doc(documentId);
@@ -61,6 +62,26 @@ export default async function handler(req, res) {
     }
 
     await orderRef.update(updatePayload);
+
+    // ==================================================
+    // 3.5. GHI ADMIN LOG (CHỈ GHI NẾU LÀ ADMIN THAO TÁC)
+    // ==================================================
+    if (isAdmin) {
+      try {
+        await db.collection('admin_logs').add({
+          adminEmail: adminEmail || 'unknown_admin', // Email hứng từ frontend
+          action: `[ĐƠN HÀNG] Cập nhật: ${newStatus}`,
+          details: { 
+            orderId: orderId, 
+            reason: cancelReason || '' 
+          },
+          // Dùng hàm timestamp riêng của admin-sdk backend
+          timestamp: admin.firestore.FieldValue.serverTimestamp() 
+        });
+      } catch (logErr) {
+        console.error("Lỗi ghi log Backend:", logErr);
+      }
+    }
 
     // ==================================================
     // 4. ĐỒNG BỘ SANG GOOGLE SHEET (CẬP NHẬT TRẠNG THÁI)

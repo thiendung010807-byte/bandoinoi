@@ -12,6 +12,7 @@ import {
   ExternalLink, Users, Award, Check, Loader2, UploadCloud
 } from 'lucide-react';
 import imageCompression from 'browser-image-compression'; 
+import { useAuth } from '../contexts/AuthContext'; // Thêm import này để lấy email admin đang thao tác
 
 // Danh sách các danh mục có thể chọn
 const AVAILABLE_CATEGORIES = [
@@ -21,7 +22,42 @@ const AVAILABLE_CATEGORIES = [
   { id: 'quanho', label: 'Mâm lễ Quan họ' }
 ];
 
+// ==================================================
+// HÀM BỔ TRỢ ĐỊNH DẠNG THỜI GIAN (MỚI THÊM)
+// ==================================================
+// Định dạng Timestamp từ Firestore thành chuỗi HH:mm DD/MM/YYYY
+const formatTimestamp = (timestamp) => {
+  if (!timestamp) return '---';
+  try {
+    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp.seconds * 1000);
+    return date.toLocaleString('vi-VN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+  } catch (e) {
+    return '---';
+  }
+};
+
+// Định dạng chuỗi datetime-local (YYYY-MM-DDTHH:mm) thành HH:mm DD/MM/YYYY
+const formatDeliveryTime = (timeStr) => {
+  if (!timeStr) return '---';
+  try {
+    const [datePart, timePart] = timeStr.split('T');
+    if (!datePart) return timeStr;
+    const [year, month, day] = datePart.split('-');
+    return `${timePart || '00:00'} ${day}/${month}/${year}`;
+  } catch (e) {
+    return timeStr.replace('T', ' ');
+  }
+};
+
 export default function AdminDashboard() {
+  const { currentUser } = useAuth(); // Lấy thông tin user hiện tại
+  
   const [activeTab, setActiveTab] = useState('overview'); 
   const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState([]);
@@ -34,7 +70,8 @@ export default function AdminDashboard() {
 
   const [filter, setFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [orderLimit, setOrderLimit] = useState(30);
+  const [orderLimit, setOrderLimit] = useState(50); // 30 chỉnh lên 50
+  const [sortBy, setSortBy] = useState('createdAt'); // Thêm state quản lý sắp xếp
   const [hasMoreOrders, setHasMoreOrders] = useState(true);
   
   const [isEditing, setIsEditing] = useState(false);
@@ -55,15 +92,37 @@ export default function AdminDashboard() {
 
   const GOOGLE_SHEET_VIEW_URL = import.meta.env.VITE_GOOGLE_SHEET_VIEW_URL || "#";
 
-  useEffect(() => {
-    const qOrders = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(orderLimit));
+  // ==================================================
+  // HÀM GHI LOG ÂM THẦM 
+  // ==================================================
+  const logAction = async (actionName, detailsObj) => {
+    try {
+      await addDoc(collection(db, 'admin_logs'), {
+        adminEmail: currentUser?.email || 'unknown_admin',
+        action: actionName,
+        details: detailsObj,
+        timestamp: serverTimestamp()
+      });
+    } catch (error) {
+      console.error("Lỗi ghi log âm thầm:", error);
+    }
+  };
+
+useEffect(() => {
+    let qOrders;
+    if (sortBy === 'createdAt') {
+      qOrders = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(orderLimit));
+    } else {
+      qOrders = query(collection(db, 'orders'), orderBy('deliveryTime', 'desc'), limit(orderLimit));
+    }
+    
     const unsubOrders = onSnapshot(qOrders, (snapshot) => {
       setOrders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       if (snapshot.docs.length < orderLimit) setHasMoreOrders(false);
       else setHasMoreOrders(true);
     });
     return () => unsubOrders();
-  }, [orderLimit]); 
+  }, [orderLimit, sortBy]);
 
   useEffect(() => {
     const unsubProducts = onSnapshot(collection(db, 'products'), (snapshot) => {
@@ -76,7 +135,10 @@ export default function AdminDashboard() {
     return () => { unsubProducts(); unsubCtvs(); };
   }, []);
   
-  const handleLoadMore = () => setOrderLimit(prevLimit => prevLimit + 30); 
+  const handleLoadMore = () => {
+    setOrderLimit(prevLimit => prevLimit + 50);
+    logAction('[TÌM KIẾM] Tải thêm đơn hàng cũ', { newLimit: orderLimit + 50 }); 
+  }; 
   
   const handleUpdateStatus = async (order, newStatus) => {
     let reason = order.cancelReason || '';
@@ -90,11 +152,22 @@ export default function AdminDashboard() {
       const response = await fetch('/api/update-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId: order.orderId || order.id, documentId: order.id, newStatus: newStatus, cancelReason: reason, isAdmin: true })
+        body: JSON.stringify({ 
+          orderId: order.orderId || order.id, 
+          documentId: order.id, 
+          newStatus: newStatus, 
+          cancelReason: reason, 
+          isAdmin: true,
+          adminEmail: currentUser?.email // Truyền email admin lên serverless function để ghi log bên Backend
+        })
       });
       const result = await response.json();
-      if (result.success) toast.success('Cập nhật trạng thái thành công!');
-      else toast.error(result.message || 'Lỗi cập nhật đơn hàng!');
+      if (result.success) {
+        toast.success('Cập nhật trạng thái thành công!');
+        // Đã chuyển phần log xử lý đơn sang Backend (api/update-order.js) cho chuẩn quy trình
+      } else {
+        toast.error(result.message || 'Lỗi cập nhật đơn hàng!');
+      }
     } catch (error) { toast.error('Mất kết nối với máy chủ!'); } 
     finally { setIsSyncing(false); }
   };
@@ -104,6 +177,10 @@ export default function AdminDashboard() {
     if (!newCtvEmail.trim() || !newCtvName.trim()) return;
     try {
       await addDoc(collection(db, 'ctvs'), { email: newCtvEmail.trim().toLowerCase(), name: newCtvName.trim(), createdAt: serverTimestamp() });
+      
+      // Ghi log Thêm CTV
+      logAction('[CTV] Thêm mới', { email: newCtvEmail.trim(), name: newCtvName.trim() });
+      
       setNewCtvEmail(''); setNewCtvName(''); toast.success('Đã thêm CTV!');
     } catch (error) { toast.error('Lỗi thêm CTV!'); }
   };
@@ -112,6 +189,10 @@ export default function AdminDashboard() {
     if (!editCtvName.trim()) return;
     try {
       await updateDoc(doc(db, 'ctvs', ctvId), { name: editCtvName.trim() });
+      
+      // Ghi log Đổi tên CTV
+      logAction('[CTV] Đổi tên', { ctvId: ctvId, newName: editCtvName.trim() });
+      
       setEditingCtvId(null); toast.success('Đã cập nhật tên CTV!');
     } catch (error) { toast.error('Lỗi cập nhật!'); }
   };
@@ -138,6 +219,8 @@ export default function AdminDashboard() {
         return updateDoc(doc(db, 'ctvs', ctv.id), { successOrders: ctvStats.count, totalRevenue: ctvStats.revenue, lastSynced: serverTimestamp() });
       });
       await Promise.all(updatePromises);
+            // logAction('[HỆ THỐNG] Tính lại doanh thu CTV', { totalCtvsUpdated: ctvs.length });
+      
       toast.success('Đã cập nhật doanh thu mới nhất cho tất cả CTV!', { id: toastId });
     } catch (error) { toast.error('Lỗi khi tính toán doanh thu!', { id: toastId }); } 
     finally { setIsSyncingCtv(false); }
@@ -162,6 +245,8 @@ export default function AdminDashboard() {
 
       if (isVariant && variantIndex !== null) handleVariantChange(variantIndex, 'image', optimizedUrl);
       else setProductForm(prev => ({ ...prev, image: optimizedUrl }));
+      logAction('[ẢNH] Tải lên Cloudinary thành công', { url: optimizedUrl, isVariant });
+      
       toast.success('Tải ảnh thành công!', { id: toastId });
     } catch (error) { toast.error('Lỗi khi tải ảnh lên. Hãy thử lại!', { id: toastId }); } 
     finally { setIsUploadingImage(false); }
@@ -200,9 +285,17 @@ export default function AdminDashboard() {
     try {
       if (isEditing) { 
         await updateDoc(doc(db, 'products', editingId), productData); 
+        
+        // Ghi log Sửa sản phẩm
+        logAction('[SẢN PHẨM] Cập nhật', { productId: editingId, name: productData.name, price: productData.price, inStock: productData.inStock });
+        
         toast.success('Cập nhật thành công!'); 
       } else { 
         await addDoc(collection(db, 'products'), { ...productData, sold: 0 }); 
+        
+        // Ghi log Thêm sản phẩm
+        logAction('[SẢN PHẨM] Thêm mới', { name: productData.name, price: productData.price });
+        
         toast.success('Đã thêm món mới!'); 
       }
       resetForm();
@@ -317,7 +410,13 @@ export default function AdminDashboard() {
                           <td className="p-5 text-center">
                             <div className="flex justify-center gap-2">
                               <button onClick={() => { setEditingCtvId(ctv.id); setEditCtvName(ctv.name); }} className="p-2 text-blue-600 bg-blue-50 rounded-lg"><Edit className="w-4 h-4"/></button>
-                              <button onClick={() => { if(window.confirm('Xóa CTV này?')) deleteDoc(doc(db, 'ctvs', ctv.id)) }} className="p-2 text-red-600 bg-red-50 rounded-lg"><Trash2 className="w-4 h-4"/></button>
+                              <button onClick={async () => { 
+                                if(window.confirm('Xóa CTV này?')) {
+                                  await deleteDoc(doc(db, 'ctvs', ctv.id));
+                                  // Ghi log Xóa CTV
+                                  logAction('[CTV] Xóa', { ctvId: ctv.id, name: ctv.name, email: ctv.email });
+                                }
+                              }} className="p-2 text-red-600 bg-red-50 rounded-lg"><Trash2 className="w-4 h-4"/></button>
                             </div>
                           </td>
                         </tr>
@@ -338,7 +437,21 @@ export default function AdminDashboard() {
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                 <input type="text" placeholder="Tìm tên, SĐT, mã đơn, CTV..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-green-500 transition-all text-sm" />
               </div>
-              <div className="flex gap-3 w-full lg:w-auto">
+<div className="flex gap-3 w-full lg:w-auto">
+                {/* BỘ LỌC SẮP XẾP */}
+                <select 
+                  value={sortBy} 
+                  onChange={(e) => {
+                    setSortBy(e.target.value);
+                    setOrderLimit(100); 
+                  }} 
+                  className="flex-1 lg:w-48 p-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-green-500 font-medium text-sm"
+                >
+                  <option value="createdAt">Mới đặt nhất (Mặc định)</option>
+                  <option value="deliveryTime">Giờ giao muộn nhất</option>
+                </select>
+
+                {/* BỘ LỌC TRẠNG THÁI */}
                 <select value={filter} onChange={(e) => setFilter(e.target.value)} className="flex-1 lg:w-48 p-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-green-500 font-medium text-sm">
                   <option value="all">Tất cả trạng thái</option>
                   <option value="pending">Chờ xác nhận</option>
@@ -355,7 +468,15 @@ export default function AdminDashboard() {
             
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse min-w-[900px]">
-                <thead><tr className="bg-white border-b text-xs text-slate-400 uppercase font-bold"><th className="p-5">Khách hàng</th><th className="p-5">Chi tiết đơn</th><th className="p-5">Thanh toán</th><th className="p-5">Trạng thái</th></tr></thead>
+                <thead>
+                  <tr className="bg-white border-b text-xs text-slate-400 uppercase font-bold">
+                    <th className="p-5">Khách hàng</th>
+                    <th className="p-5">Chi tiết đơn</th>
+                    <th className="p-5">Thời gian</th> {/* MỚI: Thêm cột tiêu đề Thời gian */}
+                    <th className="p-5">Thanh toán</th>
+                    <th className="p-5">Trạng thái</th>
+                  </tr>
+                </thead>
                 <tbody className="divide-y divide-slate-50">
                   {filteredOrders.map(order => (
                     <tr key={order.id} className="hover:bg-slate-50/50 transition-colors">
@@ -374,6 +495,19 @@ export default function AdminDashboard() {
                         {order.notes && <p className="mt-2 text-xs text-orange-700 bg-orange-50 p-2 rounded-lg">Lưu ý: {order.notes}</p>}
                         {order.referrer && <p className="mt-2 text-xs text-blue-600 font-semibold italic">Giới thiệu: {order.referrer}</p>}
                       </td>
+                      
+                      {/* MỚI: Ô dữ liệu hiển thị Thời gian đặt và Thời gian nhận */}
+                      <td className="p-5 align-top text-sm space-y-3">
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase block mb-0.5">Thời gian đặt</span>
+                          <p className="font-medium text-slate-700">{formatTimestamp(order.createdAt)}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-bold text-orange-400 uppercase block mb-0.5">Thời gian nhận</span>
+                          <p className="font-bold text-orange-600">{formatDeliveryTime(order.deliveryTime)}</p>
+                        </div>
+                      </td>
+
                       <td className="p-5 align-top">
                         <p className="font-bold text-green-600 text-lg">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(order.total)}</p>
                         <span className="text-[10px] font-bold px-2 py-1 rounded bg-slate-100 uppercase">{order.paymentMethod}</span>
@@ -409,7 +543,7 @@ export default function AdminDashboard() {
             {hasMoreOrders && filter === 'all' && searchQuery === '' && (
               <div className="flex justify-center p-6 bg-slate-50/50 border-t border-slate-100">
                 <button onClick={handleLoadMore} className="px-6 py-3 bg-white border border-slate-200 hover:border-green-500 text-slate-700 hover:text-green-600 font-bold rounded-xl transition-all flex items-center gap-2 shadow-sm">
-                  Tải thêm 30 đơn cũ hơn
+                  Tải thêm 50 đơn cũ hơn
                 </button>
               </div>
             )}
@@ -570,7 +704,13 @@ export default function AdminDashboard() {
                               });
                               setIsEditing(true); setEditingId(product.id);
                             }} className="flex-1 bg-blue-50 text-blue-600 text-xs font-bold py-2 rounded-xl">Sửa</button>
-                          <button onClick={() => { if(window.confirm('Xóa món này?')) deleteDoc(doc(db, 'products', product.id)) }} className="px-3 bg-red-50 text-red-400 rounded-xl"><Trash2 className="w-4 h-4"/></button>
+                          <button onClick={async () => { 
+                            if(window.confirm('Xóa món này?')) {
+                              await deleteDoc(doc(db, 'products', product.id));
+                              // Ghi log Xóa Sản phẩm
+                              logAction('[SẢN PHẨM] Xóa', { productId: product.id, productName: product.name });
+                            }
+                          }} className="px-3 bg-red-50 text-red-400 rounded-xl"><Trash2 className="w-4 h-4"/></button>
                         </div>
                       </div>
                     </div>
