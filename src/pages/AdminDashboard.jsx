@@ -22,6 +22,39 @@ const AVAILABLE_CATEGORIES = [
   { id: 'quanho', label: 'Mâm lễ Quan họ' }
 ];
 
+// ==================================================
+// HÀM BỔ TRỢ ĐỊNH DẠNG THỜI GIAN (MỚI THÊM)
+// ==================================================
+// Định dạng Timestamp từ Firestore thành chuỗi HH:mm DD/MM/YYYY
+const formatTimestamp = (timestamp) => {
+  if (!timestamp) return '---';
+  try {
+    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp.seconds * 1000);
+    return date.toLocaleString('vi-VN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+  } catch (e) {
+    return '---';
+  }
+};
+
+// Định dạng chuỗi datetime-local (YYYY-MM-DDTHH:mm) thành HH:mm DD/MM/YYYY
+const formatDeliveryTime = (timeStr) => {
+  if (!timeStr) return '---';
+  try {
+    const [datePart, timePart] = timeStr.split('T');
+    if (!datePart) return timeStr;
+    const [year, month, day] = datePart.split('-');
+    return `${timePart || '00:00'} ${day}/${month}/${year}`;
+  } catch (e) {
+    return timeStr.replace('T', ' ');
+  }
+};
+
 export default function AdminDashboard() {
   const { currentUser } = useAuth(); // Lấy thông tin user hiện tại
   
@@ -414,7 +447,15 @@ export default function AdminDashboard() {
             
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse min-w-[900px]">
-                <thead><tr className="bg-white border-b text-xs text-slate-400 uppercase font-bold"><th className="p-5">Khách hàng</th><th className="p-5">Chi tiết đơn</th><th className="p-5">Thanh toán</th><th className="p-5">Trạng thái</th></tr></thead>
+                <thead>
+                  <tr className="bg-white border-b text-xs text-slate-400 uppercase font-bold">
+                    <th className="p-5">Khách hàng</th>
+                    <th className="p-5">Chi tiết đơn</th>
+                    <th className="p-5">Thời gian</th> {/* MỚI: Thêm cột tiêu đề Thời gian */}
+                    <th className="p-5">Thanh toán</th>
+                    <th className="p-5">Trạng thái</th>
+                  </tr>
+                </thead>
                 <tbody className="divide-y divide-slate-50">
                   {filteredOrders.map(order => (
                     <tr key={order.id} className="hover:bg-slate-50/50 transition-colors">
@@ -433,6 +474,19 @@ export default function AdminDashboard() {
                         {order.notes && <p className="mt-2 text-xs text-orange-700 bg-orange-50 p-2 rounded-lg">Lưu ý: {order.notes}</p>}
                         {order.referrer && <p className="mt-2 text-xs text-blue-600 font-semibold italic">Giới thiệu: {order.referrer}</p>}
                       </td>
+                      
+                      {/* MỚI: Ô dữ liệu hiển thị Thời gian đặt và Thời gian nhận */}
+                      <td className="p-5 align-top text-sm space-y-3">
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase block mb-0.5">Thời gian đặt</span>
+                          <p className="font-medium text-slate-700">{formatTimestamp(order.createdAt)}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-bold text-orange-400 uppercase block mb-0.5">Thời gian nhận</span>
+                          <p className="font-bold text-orange-600">{formatDeliveryTime(order.deliveryTime)}</p>
+                        </div>
+                      </td>
+
                       <td className="p-5 align-top">
                         <p className="font-bold text-green-600 text-lg">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(order.total)}</p>
                         <span className="text-[10px] font-bold px-2 py-1 rounded bg-slate-100 uppercase">{order.paymentMethod}</span>
