@@ -472,7 +472,7 @@ useEffect(() => {
                   <tr className="bg-white border-b text-xs text-slate-400 uppercase font-bold">
                     <th className="p-5">Khách hàng</th>
                     <th className="p-5">Chi tiết đơn</th>
-                    <th className="p-5">Thời gian</th> {/* MỚI: Thêm cột tiêu đề Thời gian */}
+                    <th className="p-5">Thời gian</th>
                     <th className="p-5">Thanh toán</th>
                     <th className="p-5">Trạng thái</th>
                   </tr>
@@ -496,7 +496,6 @@ useEffect(() => {
                         {order.referrer && <p className="mt-2 text-xs text-blue-600 font-semibold italic">Giới thiệu: {order.referrer}</p>}
                       </td>
                       
-                      {/* MỚI: Ô dữ liệu hiển thị Thời gian đặt và Thời gian nhận */}
                       <td className="p-5 align-top text-sm space-y-3">
                         <div>
                           <span className="text-[10px] font-bold text-slate-400 uppercase block mb-0.5">Thời gian đặt</span>
