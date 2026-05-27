@@ -11,9 +11,9 @@ import SkeletonCard from '../components/SkeletonCard';
 // ĐÃ CẬP NHẬT: Thêm nút "Tất cả" lên đầu và giữ các danh mục tùy chỉnh của bạn
 const CATEGORIES = [
   { id: 'thbn', label: 'Tự hào Bắc Ninh', icon: Flame },
+  { id: 'quanho', label: 'Mâm lễ Quan họ', icon: Heart },
   { id: 'combo', label: 'Combo tiết kiệm', icon: Gift },
   { id: 'monle', label: 'Món lẻ', icon: CakeSlice },
-  { id: 'quanho', label: 'Mâm lễ Quan họ', icon: Heart },
 ];
 
 export default function Home() {
